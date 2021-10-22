@@ -28,7 +28,7 @@ import DNN_Log_Print
 
 class MscaleDNN(object):
     def __init__(self, input_dim=4, out_dim=1, hidden_layer=None, Model_name='DNN', name2actIn='relu',
-                 name2actHidden='relu', name2actOut='linear', opt2regular_WB='L2', type2numeric='float32', freq=None):
+                 name2actHidden='relu', name2actOut='linear', opt2regular_WB='L2', type2numeric='float32', factor2freq=None):
         super(MscaleDNN, self).__init__()
         if 'DNN' == str.upper(Model_name):
             self.DNN = DNN_Class_base.Pure_Dense_Net(
@@ -50,20 +50,34 @@ class MscaleDNN(object):
         elif type2numeric == 'float16':
             self.float_type = tf.float16
 
-        self.freq = freq
+        self.factor2freq = factor2freq
         self.opt2regular_WB = opt2regular_WB
 
-    def loss_it2Laplace(self, XYZ=None, fside=None, loss_type='ritz_loss'):
-        UNN = self.DNN(XYZ, scale=self.freq)
+    def loss_it2Laplace(self, XYZ=None, fside=None, if_lambda2fside=True, loss_type='ritz_loss'):
+        assert (XYZ is not None)
+        assert (fside is not None)
+
+        shape2XYZ = XYZ.get_shape().as_list()
+        lenght2XYZ_shape = len(shape2XYZ)
+        assert (lenght2XYZ_shape == 2)
+        assert (shape2XYZ[-1] == 2)
+
         X = tf.reshape(XYZ[:, 0], shape=[-1, 1])
         Y = tf.reshape(XYZ[:, 1], shape=[-1, 1])
         Z = tf.reshape(XYZ[:, 2], shape=[-1, 1])
+
+        if if_lambda2fside:
+            force_side = fside(X, Y, Z)
+        else:
+            force_side = fside
+
+        UNN = self.DNN(XYZ, scale=self.factor2freq)
         dUNN = tf.gradients(UNN, XYZ)[0]  # * 行 2 列
 
         if str.lower(loss_type) == 'ritz_loss' or str.lower(loss_type) == 'variational_loss':
             dUNN_Norm = tf.reshape(tf.sqrt(tf.reduce_sum(tf.square(dUNN), axis=-1)), shape=[-1, 1])  # 按行求和
             dUNN_2Norm = tf.square(dUNN_Norm)
-            loss_it_ritz = (1.0/2)*dUNN_2Norm-tf.multiply(tf.reshape(fside(X, Y, Z), shape=[-1, 1]), UNN)
+            loss_it_ritz = (1.0/2)*dUNN_2Norm-tf.multiply(tf.reshape(force_side, shape=[-1, 1]), UNN)
             loss_it = tf.reduce_mean(loss_it_ritz)
         elif str.lower(loss_type) == 'l2_loss':
             dUNN_x = tf.gather(dUNN, [0], axis=-1)
@@ -76,18 +90,37 @@ class MscaleDNN(object):
             dUNNyy = tf.gather(dUNNyxyz, [1], axis=-1)
             dUNNzz = tf.gather(dUNNzxyz, [2], axis=-1)
             # -Laplace U=f --> -Laplace U - f --> -(Laplace U + f)
-            loss_it_L2 = dUNNxx + dUNNyy + dUNNzz + tf.reshape(fside(X, Y), shape=[-1, 1])
+            loss_it_L2 = dUNNxx + dUNNyy + dUNNzz + tf.reshape(force_side, shape=[-1, 1])
             square_loss_it = tf.square(loss_it_L2)
             loss_it = tf.reduce_mean(square_loss_it)
         return UNN, loss_it
 
-    def loss_it2pLaplace(self, XYZ=None, Aeps=None, fside=None, loss_type='ritz_loss', p_index=2):
-        UNN = self.DNN(XYZ, scale=self.freq)
+    def loss_it2pLaplace(self, XYZ=None, Aeps=None, if_lambda2Aeps=True, fside=None, if_lambda2fside=True,
+                         loss_type='ritz_loss', p_index=2):
+        assert (XYZ is not None)
+        assert (fside is not None)
+
+        shape2XYZ = XYZ.get_shape().as_list()
+        lenght2XYZ_shape = len(shape2XYZ)
+        assert (lenght2XYZ_shape == 2)
+        assert (shape2XYZ[-1] == 2)
+
         X = tf.reshape(XYZ[:, 0], shape=[-1, 1])
         Y = tf.reshape(XYZ[:, 1], shape=[-1, 1])
         Z = tf.reshape(XYZ[:, 2], shape=[-1, 1])
-        a_eps = Aeps(X, Y, Z)  # * 行 1 列
 
+        if if_lambda2Aeps:
+            a_eps = Aeps(X, Y, Z)  # * 行 1 列
+        else:
+            a_eps = Aeps
+
+        if if_lambda2fside:
+            force_side = fside(X, Y, Z)
+        else:
+            force_side = fside
+
+
+        UNN = self.DNN(XYZ, scale=self.factor2freq)
         dUNN = tf.gradients(UNN, XYZ)[0]  # * 行 2 列
         # 变分形式的loss of interior，训练得到的 UNN 是 * 行 1 列
         if str.lower(loss_type) == 'ritz_loss' or str.lower(loss_type) == 'variational_loss':
@@ -97,28 +130,53 @@ class MscaleDNN(object):
             loss_it = tf.reduce_mean(loss_it_ritz)
         return UNN, loss_it
 
-    def loss_it2Possion_Boltzmann(self, XYZ=None, Aeps=None, fside=None, loss_type='ritz_loss', p_index=2):
-        UNN = self.DNN(XYZ, scale=self.freq)
+    def loss_it2Possion_Boltzmann(self, XYZ=None, Aeps=None, if_lambda2Aeps=True, Kappa_eps=None, if_lambda2Kappa=True,
+                                  fside=None, if_lambda2fside=True, loss_type='ritz_loss', p_index=2):
+
+        assert (XYZ is not None)
+        assert (fside is not None)
+
+        shape2XYZ = XYZ.get_shape().as_list()
+        lenght2XYZ_shape = len(shape2XYZ)
+        assert (lenght2XYZ_shape == 2)
+        assert (shape2XYZ[-1] == 2)
+
         X = tf.reshape(XYZ[:, 0], shape=[-1, 1])
         Y = tf.reshape(XYZ[:, 1], shape=[-1, 1])
         Z = tf.reshape(XYZ[:, 2], shape=[-1, 1])
-        a_eps = Aeps(X, Y, Z)  # * 行 1 列
 
+        if if_lambda2Aeps:
+            a_eps = Aeps(X, Y, Z)  # * 行 1 列
+        else:
+            a_eps = Aeps
+
+        if if_lambda2Kappa:
+            Kappa = Kappa_eps(X, Y, Z)
+        else:
+            Kappa = Kappa_eps
+
+        if if_lambda2fside:
+            force_side = fside(X, Y, Z)
+        else:
+            force_side = fside
+
+        UNN = self.DNN(XYZ, scale=self.factor2freq)
         dUNN = tf.gradients(UNN, XYZ)[0]  # * 行 2 列
         if str.lower(loss_type) == 'ritz_loss' or str.lower(loss_type) == 'variational_loss':
             dUNN_Norm = tf.reshape(tf.sqrt(tf.reduce_sum(tf.square(dUNN), axis=-1)), shape=[-1, 1])  # 按行求和
             AdUNN_pNorm = tf.multiply(a_eps, tf.pow(dUNN_Norm, p_index))
-            loss_it_ritz = (1.0 / p_index) * AdUNN_pNorm - tf.multiply(tf.reshape(fside(X, Y, Z), shape=[-1, 1]), UNN)
+            loss_it_ritz = (1.0 / p_index) * (AdUNN_pNorm + Kappa * UNN * UNN) - \
+                           tf.multiply(tf.reshape(force_side, shape=[-1, 1]), UNN)
             loss_it = tf.reduce_mean(loss_it_ritz)
 
         return UNN, loss_it
 
-    def loss2bd(self, XYZ_bd=None, Ubd_exact=None, freq=None):
+    def loss2bd(self, XYZ_bd=None, Ubd_exact=None, factor2freq=None):
         X_bd = tf.reshape(XYZ_bd[:, 0], shape=[-1, 1])
         Y_bd = tf.reshape(XYZ_bd[:, 1], shape=[-1, 1])
         Z_bd = tf.reshape(XYZ_bd[:, 2], shape=[-1, 1])
         Ubd = Ubd_exact(X_bd, Y_bd, Z_bd)
-        UNN_bd = self.DNN(XYZ_bd, scale=freq)
+        UNN_bd = self.DNN(XYZ_bd, scale=factor2freq)
         loss_bd_square = tf.square(UNN_bd - Ubd)
         loss_bd = tf.reduce_mean(loss_bd_square)
         return loss_bd
@@ -128,7 +186,7 @@ class MscaleDNN(object):
         return sum2WB
 
     def evalue_MscaleDNN(self, XYZ_points=None):
-        UNN = self.DNN(XYZ_points, scale=self.freq)
+        UNN = self.DNN(XYZ_points, scale=self.factor2freq)
         return UNN
 
 
@@ -180,19 +238,19 @@ def solve_Multiscale_PDE(R):
 
     mscalednn = MscaleDNN(input_dim=R['input_dim'], out_dim=R['output_dim'], hidden_layer=R['hidden_layers'],
                           Model_name=R['model2NN'], name2actIn=R['name2act_in'], name2actHidden=R['name2act_hidden'],
-                          name2actOut=R['name2act_out'], opt2regular_WB='L0', type2numeric='float32', freq=R['freq'])
-    global_steps = tf.Variable(0, trainable=False)
+                          name2actOut=R['name2act_out'], opt2regular_WB='L0', type2numeric='float32', factor2freq=R['freq'])
+    global_steps = tf.compat.v1.Variable(0, trainable=False)
     with tf.device('/gpu:%s' % (R['gpuNo'])):
         with tf.variable_scope('vscope', reuse=tf.AUTO_REUSE):
-            XYZ_it = tf.placeholder(tf.float32, name='XYZ_it', shape=[None, input_dim])
-            XYZ_bottom = tf.placeholder(tf.float32, name='bottom_bd', shape=[None, input_dim])
-            XYZ_top = tf.placeholder(tf.float32, name='top_bd', shape=[None, input_dim])
-            XYZ_left = tf.placeholder(tf.float32, name='left_bd', shape=[None, input_dim])
-            XYZ_right = tf.placeholder(tf.float32, name='right_bd', shape=[None, input_dim])
-            XYZ_front = tf.placeholder(tf.float32, name='front_bd', shape=[None, input_dim])
-            XYZ_behind = tf.placeholder(tf.float32, name='behind_bd', shape=[None, input_dim])
-            boundary_penalty = tf.placeholder_with_default(input=1e3, shape=[], name='bd_p')
-            in_learning_rate = tf.placeholder_with_default(input=1e-5, shape=[], name='lr')
+            XYZ_it = tf.compat.v1.placeholder(tf.float32, name='XYZ_it', shape=[None, input_dim])
+            XYZ_bottom = tf.compat.v1.placeholder(tf.float32, name='bottom_bd', shape=[None, input_dim])
+            XYZ_top = tf.compat.v1.placeholder(tf.float32, name='top_bd', shape=[None, input_dim])
+            XYZ_left = tf.compat.v1.placeholder(tf.float32, name='left_bd', shape=[None, input_dim])
+            XYZ_right = tf.compat.v1.placeholder(tf.float32, name='right_bd', shape=[None, input_dim])
+            XYZ_front = tf.compat.v1.placeholder(tf.float32, name='front_bd', shape=[None, input_dim])
+            XYZ_behind = tf.compat.v1.placeholder(tf.float32, name='behind_bd', shape=[None, input_dim])
+            boundary_penalty = tf.compat.v1.placeholder_with_default(input=1e3, shape=[], name='bd_p')
+            in_learning_rate = tf.compat.v1.placeholder_with_default(input=1e-5, shape=[], name='lr')
 
             X_it = tf.reshape(XYZ_it[:, 0], shape=[-1, 1])
             Y_it = tf.reshape(XYZ_it[:, 1], shape=[-1, 1])
@@ -221,7 +279,7 @@ def solve_Multiscale_PDE(R):
 
             loss = loss_it + boundary_penalty * loss_bd + PWB                     # 要优化的loss function
 
-            my_optimizer = tf.train.AdamOptimizer(in_learning_rate)
+            my_optimizer = tf.compat.v1.train.AdamOptimizer(in_learning_rate)
             if R['train_model'] == 'group3_training':
                 train_op1 = my_optimizer.minimize(loss_it, global_step=global_steps)
                 train_op2 = my_optimizer.minimize(loss_bd, global_step=global_steps)
@@ -271,10 +329,10 @@ def solve_Multiscale_PDE(R):
 
         # ConfigProto 加上allow_soft_placement=True就可以使用 gpu 了
 
-    config = tf.ConfigProto(allow_soft_placement=True)  # 创建sess的时候对sess进行参数配置
+    config = tf.compat.v1.ConfigProto(allow_soft_placement=True)  # 创建sess的时候对sess进行参数配置
     config.gpu_options.allow_growth = True  # True是让TensorFlow在运行过程中动态申请显存，避免过多的显存占用。
     config.allow_soft_placement = True  # 当指定的设备不存在时，允许选择一个存在的设备运行。比如gpu不存在，自动降到cpu上运行
-    with tf.Session(config=config) as sess:
+    with tf.compat.v1.Session(config=config) as sess:
         sess.run(tf.global_variables_initializer())
         tmp_lr = learning_rate
 
@@ -384,10 +442,10 @@ if __name__ == "__main__":
             os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     # 文件保存路径设置
-    # store_file = 'Laplace2D'
-    store_file = 'pLaplace2D'
-    # store_file = 'Boltzmann2D'
-    # store_file = 'Convection2D'
+    # store_file = 'Laplace3D'
+    # store_file = 'pLaplace3D'
+    store_file = 'Boltzmann3D'
+    # store_file = 'Convection3D'
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     sys.path.append(BASE_DIR)
     OUT_DIR = os.path.join(BASE_DIR, store_file)
@@ -396,14 +454,14 @@ if __name__ == "__main__":
         os.mkdir(OUT_DIR)
 
     R['seed'] = np.random.randint(1e5)
-    seed_str = str(R['seed'])                     # int 型转为字符串型
+    seed_str = str(R['seed'])  # int 型转为字符串型
     FolderName = os.path.join(OUT_DIR, seed_str)  # 路径连接
     R['FolderName'] = FolderName
     if not os.path.exists(FolderName):
         print('--------------------- FolderName -----------------:', FolderName)
         os.mkdir(FolderName)
 
-    # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  复制并保存当前文件 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    # ----------------------------------------  复制并保存当前文件 -----------------------------------------
     if platform.system() == 'Windows':
         tf.compat.v1.reset_default_graph()
         shutil.copy(__file__, '%s/%s' % (FolderName, os.path.basename(__file__)))
@@ -419,12 +477,12 @@ if __name__ == "__main__":
         epoch_stop = input('please input a stop epoch:')
         R['max_epoch'] = int(epoch_stop)
 
-    # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Setup of multi-scale problem %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    R['input_dim'] = 2                                  # 输入维数，即问题的维数(几元问题)
-    R['output_dim'] = 1                                 # 输出维数
+    # ---------------------------- Setup of multi-scale problem-------------------------------
+    R['input_dim'] = 3  # 输入维数，即问题的维数(几元问题)
+    R['output_dim'] = 1  # 输出维数
 
-    if store_file == 'Laplace2D':
-        R['PDE_type'] = 'Laplace'
+    if store_file == 'Laplace3D':
+        R['PDE_type'] = 'general_Laplace'
         R['equa_name'] = 'PDE1'
         # R['equa_name'] = 'PDE2'
         # R['equa_name'] = 'PDE3'
@@ -432,82 +490,49 @@ if __name__ == "__main__":
         # R['equa_name'] = 'PDE5'
         # R['equa_name'] = 'PDE6'
         # R['equa_name'] = 'PDE7'
-    elif store_file == 'pLaplace2D':
-        R['PDE_type'] = 'pLaplace_implicit'
-        # R['equa_name'] = 'multi_scale2D_1'      # p=2 区域为 [-1,1]X[-1,1]
-        # R['equa_name'] = 'multi_scale2D_2'      # p=2 区域为 [-1,1]X[-1,1]
-        # R['equa_name'] = 'multi_scale2D_3'      # p=2 区域为 [-1,1]X[-1,1] 论文中的例子
-        R['equa_name'] = 'multi_scale2D_4'      # p=2 区域为 [-1,1]X[-1,1] 论文中的例子
-        # R['equa_name'] = 'multi_scale2D_5'      # p=3 区域为 [0,1]X[0,1]   和例三的系数A一样
-        # R['equa_name'] = 'multi_scale2D_6'      # p=3 区域为 [-1,1]X[-1,1] 和例三的系数A一样
-
-        # R['PDE_type'] = 'pLaplace_explicit'
-        # R['equa_name'] = 'multi_scale2D_7'      # p=2 区域为 [0,1]X[0,1]
-    elif store_file == 'Boltzmann2D':
+    elif store_file == 'pLaplace3D':
+        R['PDE_type'] = 'pLaplace'
+        # R['equa_name'] = 'multi_scale3D_1'
+        # R['equa_name'] = 'multi_scale3D_2'
+        # R['equa_name'] = 'multi_scale3D_3'
+        # R['equa_name'] = 'multi_scale3D_5'
+        # R['equa_name'] = 'multi_scale3D_6'
+        R['equa_name'] = 'multi_scale3D_7'
+    elif store_file == 'Boltzmann3D':
         R['PDE_type'] = 'Possion_Boltzmann'
-        # R['equa_name'] = 'Boltzmann1'           # p=2 区域为 [-1,1]X[-1,1]
-        # R['equa_name'] = 'Boltzmann2'             # p=2 区域为 [-1,1]X[-1,1]
+        # R['equa_name'] = 'Boltzmann0'
+        # R['equa_name'] = 'Boltzmann1'
+        # R['equa_name'] = 'Boltzmann2'
         # R['equa_name'] = 'Boltzmann3'
-        # R['equa_name'] = 'Boltzmann4'
-        R['equa_name'] = 'Boltzmann5'
-    elif store_file == 'Convection2D':
-        R['PDE_type'] = 'Convection_diffusion'
-        # R['equa_name'] = 'Convection1'
-        R['equa_name'] = 'Convection2'
+        R['equa_name'] = 'Boltzmann4'
+        # R['equa_name'] = 'Boltzmann5'
+        # R['equa_name'] = 'Boltzmann6'
+        # R['equa_name'] = 'Boltzmann7'
 
-    if R['PDE_type'] == 'Laplace':
-        R['mesh_number'] = 6
+    if R['PDE_type'] == 'general_Laplace':
+        R['mesh_number'] = 1
         R['epsilon'] = 0.1
         R['order2pLaplace_operator'] = 2
-    else:
-        epsilon = 0.1                  # 由终端输入的会记录为字符串形式
-        R['epsilon'] = float(epsilon)  # 字符串转为浮点
+        R['batch_size2interior'] = 6000  # 内部训练数据的批大小
+        R['batch_size2boundary'] = 1000
+    elif R['PDE_type'] == 'pLaplace' or R['PDE_type'] == 'Possion_Boltzmann':
+        R['mesh_number'] = 1
+        R['epsilon'] = 0.1
+        R['order2pLaplace_operator'] = 2
+        R['batch_size2interior'] = 6000  # 内部训练数据的批大小
+        R['batch_size2boundary'] = 1000
 
-    if R['PDE_type'] == 'pLaplace_explicit' or R['PDE_type'] == 'pLaplace_implicit':
-        order2pLaplace = input('please input the order(a int number) to pLaplace:')
-        order = float(order2pLaplace)
-        R['order2pLaplace_operator'] = order
-
-    if R['PDE_type'] == 'pLaplace_implicit':
-        # 网格大小设置
-        mesh_number = input('please input mesh_number =')     # 由终端输入的会记录为字符串形式
-        R['mesh_number'] = int(mesh_number)                   # 字符串转为浮点
-    elif R['PDE_type'] == 'Possion_Boltzmann' or R['PDE_type'] == 'pLaplace_explicit'\
-            or R['PDE_type'] == 'Convection_diffusion':
-        R['mesh_number'] = int(6)
-        R['order2pLaplace_operator'] = float(2)
-
-    # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Setup of DNN %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    # 训练集的设置(内部和边界)
-    if R['PDE_type'] == 'pLaplace_implicit':
-        R['batch_size2interior'] = 3000      # 内部训练数据的批大小
-        # R['batch_size2interior'] = 10000   # 内部训练数据的批大小
-        if R['mesh_number'] == 2:
-            R['batch_size2boundary'] = 25    # 边界训练数据的批大小
-        elif R['mesh_number'] == 3:
-            R['batch_size2boundary'] = 100   # 边界训练数据的批大小
-        elif R['mesh_number'] == 4:
-            R['batch_size2boundary'] = 200   # 边界训练数据的批大小
-        elif R['mesh_number'] == 5:
-            R['batch_size2boundary'] = 300   # 边界训练数据的批大小
-        elif R['mesh_number'] == 6:
-            R['batch_size2boundary'] = 500   # 边界训练数据的批大小
-    else:
-        R['batch_size2interior'] = 3000      # 内部训练数据的批大小
-        R['batch_size2boundary'] = 500       # 边界训练数据的批大小
-
+    # ---------------------------- Setup of DNN -------------------------------
     # 装载测试数据模式
     R['testData_model'] = 'loadData'
     # R['testData_model'] = 'random_generate'
 
-    # R['loss_type'] = 'L2_loss'                             # loss类型:L2 loss
-    R['loss_type'] = 'variational_loss'                      # loss类型:PDE变分
-    # R['loss_type'] = 'lncosh_loss2Ritz'
-    R['lambda2lncosh'] = 50.0
+    # R['loss_type'] = 'L2_loss'                        # loss类型:L2 loss
+    R['loss_type'] = 'variational_loss'  # loss类型:PDE变分
 
-    R['optimizer_name'] = 'Adam'                          # 优化器
-    R['learning_rate'] = 2e-4                             # 学习率
-    R['learning_rate_decay'] = 5e-5                       # 学习率 decay
+    R['optimizer_name'] = 'Adam'  # 优化器
+    R['learning_rate'] = 2e-4  # 学习率
+    R['learning_rate_decay'] = 5e-5  # 学习率 decay
     R['train_model'] = 'union_training'
     # R['train_model'] = 'group2_training'
     # R['train_model'] = 'group3_training'
@@ -516,35 +541,44 @@ if __name__ == "__main__":
     R['regular_wb_model'] = 'L0'
     # R['regular_wb_model'] = 'L1'
     # R['regular_wb_model'] = 'L2'
-    R['penalty2weight_biases'] = 0.000                    # Regularization parameter for weights
-    # R['penalty2weight_biases'] = 0.001                  # Regularization parameter for weights
-    # R['penalty2weight_biases'] = 0.0025                 # Regularization parameter for weights
+    R['penalty2weight_biases'] = 0.000  # Regularization parameter for weights
+    # R['penalty2weight_biases'] = 0.001                    # Regularization parameter for weights
+    # R['penalty2weight_biases'] = 0.0025                   # Regularization parameter for weights
 
     # 边界的惩罚处理方式,以及边界的惩罚因子
     R['activate_penalty2bd_increase'] = 1
-    # R['init_boundary_penalty'] = 1000                     # Regularization parameter for boundary conditions
-    R['init_boundary_penalty'] = 100                     # Regularization parameter for boundary conditions
+    # R['init_boundary_penalty'] = 1000  # Regularization parameter for boundary conditions
+    R['init_boundary_penalty'] = 100  # Regularization parameter for boundary conditions
 
     # 网络的频率范围设置
     # R['freq'] = np.concatenate(([1], np.arange(1, 100 - 1)), axis=0)
-    R['freq'] = np.random.normal(0, 100, 100)
+    R['freq'] = np.random.normal(0, 100, 120)
 
     # &&&&&&&&&&&&&&&&&&& 使用的网络模型 &&&&&&&&&&&&&&&&&&&&&&&&&&&
     # R['model2NN'] = 'DNN'
-    # R['model2NN'] = 'DNN_scale'
-    # R['model2NN'] = 'DNN_adapt_scale'
-    R['model2NN'] = 'DNN_FourierBase'
-    # R['model2NN'] = 'DNN_WaveletBase'
+    # R['model2NN'] = 'Scale_DNN'
+    # R['model2NN'] = 'Adapt_scale_DNN'
+    R['model2NN'] = 'Fourier_DNN'
+    # R['model2NN'] = 'Wavelet_DNN'
 
     # &&&&&&&&&&&&&&&&&&&&&& 隐藏层的层数和每层神经元数目 &&&&&&&&&&&&&&&&&&&&&&&&&&&&
-    if R['model2NN'] == 'DNN_FourierBase':
-        R['hidden_layers'] = (125, 200, 200, 100, 100, 80)  # 1*125+250*200+200*200+200*100+100*100+100*50+50*1=128205
+    if R['model2NN'] == 'Fourier_DNN':
+        R['hidden_layers'] = (
+        250, 400, 400, 200, 200, 150)  # 250+500*400+400*400+400*200+200*200+200*150+150 = 510400
     else:
-        # R['hidden_layers'] = (100, 80, 80, 60, 40, 40)
+        # R['hidden_layers'] = (100, 10, 8, 6, 4)  # 测试
+        # R['hidden_layers'] = (100, 80, 60, 60, 40, 40, 20)
         # R['hidden_layers'] = (200, 100, 80, 50, 30)
-        R['hidden_layers'] = (250, 200, 200, 100, 100, 80)  # 1*250+250*200+200*200+200*100+100*100+100*50+50*1=128330
-        # R['hidden_layers'] = (500, 400, 300, 200, 100)
+        # R['hidden_layers'] = (300, 200, 150, 100, 100, 50, 50)
+        R['hidden_layers'] = (
+        500, 400, 400, 200, 200, 150)  # 500+500*400+400*400+400*200+200*200+200*150+150 = 510650
         # R['hidden_layers'] = (500, 400, 300, 300, 200, 100)
+        # R['hidden_layers'] = (500, 400, 300, 200, 200, 100)
+        # R['hidden_layers'] = (500, 400, 300, 300, 200, 100, 100)
+        # R['hidden_layers'] = (500, 300, 200, 200, 100, 100, 50)
+        # R['hidden_layers'] = (1000, 800, 600, 400, 200)
+        # R['hidden_layers'] = (1000, 500, 400, 300, 300, 200, 100, 100)
+        # R['hidden_layers'] = (2000, 1500, 1000, 500, 250)
 
     # &&&&&&&&&&&&&&&&&&& 激活函数的选择 &&&&&&&&&&&&&&&&&&&&&&&&&&&&&
     R['name2act_in'] = 'relu'
@@ -562,33 +596,12 @@ if __name__ == "__main__":
 
     R['name2act_out'] = 'linear'
 
-    if R['model2NN'] == 'DNN_FourierBase' and R['name2act_hidden'] == 'tanh':
+    if R['model2NN'] == 'Fourier_DNN' and R['name2act_hidden'] == 'tanh':
         # R['sfourier'] = 0.5
         R['sfourier'] = 1.0
-    elif R['model2NN'] == 'DNN_FourierBase' and R['name2act_hidden'] == 's2relu':
+    elif R['model2NN'] == 'Fourier_DNN' and R['name2act_hidden'] == 's2relu':
         R['sfourier'] = 0.5
-        # R['sfourier'] = 1.0
-    elif R['model2NN'] == 'DNN_FourierBase' and R['name2act_hidden'] == 'sinAddcos':
-        R['sfourier'] = 0.5
-        # R['sfourier'] = 1.0
-    elif R['model2NN'] == 'DNN_FourierBase' and R['name2act_hidden'] == 'sin':
-        # R['sfourier'] = 0.5
-        R['sfourier'] = 1.0
-    elif R['model2NN'] == 'DNN_FourierBase' and R['name2act_hidden'] == 'scsrelu':
-        R['sfourier'] = 0.5
-        # R['sfourier'] = 1.0
     else:
-        # R['sfourier'] = 1.0
-        # R['sfourier'] = 5.0
-        R['sfourier'] = 0.75
-
-    if R['model2NN'] == 'DNN_WaveletBase':
-        # R['freq'] = np.concatenate(([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9], np.arange(1, 100 - 9)), axis=0)
-        # R['freq'] = np.concatenate(([0.25, 0.5, 0.6, 0.7, 0.8, 0.9], np.arange(1, 100 - 6)), axis=0)
-        # R['freq'] = np.concatenate(([0.5, 0.6, 0.7, 0.8, 0.9], np.arange(1, 100 - 5)), axis=0)
-        # R['freq'] = np.concatenate(([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9], np.arange(1, 30-9)), axis=0)
-        R['freq'] = np.concatenate(([0.25, 0.5, 0.6, 0.7, 0.8, 0.9], np.arange(1, 100 - 6)), axis=0)
-        # R['freq'] = np.arange(1, 100)
+        R['sfourier'] = 1.0
 
     solve_Multiscale_PDE(R)
-

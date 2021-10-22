@@ -596,7 +596,7 @@ class Pure_Dense_Net(object):
             regular_b = tf.constant(0.0)
         return regular_w + regular_b
 
-    def __call__(self, inputs, scale=None):
+    def __call__(self, inputs, scale=None, sFourier=1.0):
         """
         Args
             inputs: the input point set [num, in-dim]
@@ -715,7 +715,7 @@ class Dense_ScaleNet(object):
             regular_b = tf.constant(0.0)
         return regular_w + regular_b
 
-    def __call__(self, inputs, scale=None):
+    def __call__(self, inputs, scale=None, sFourier=1.0):
         """
         Args
             inputs: the input point set [num, in-dim]
@@ -862,7 +862,7 @@ class Dense_Fourier_Net(object):
             regular_b = tf.constant(0.0)
         return regular_w + regular_b
 
-    def __call__(self, inputs, scale=None):
+    def __call__(self, inputs, scale=None, sFourier=1.0):
         """
         Args
             inputs: the input point set [num, in-dim]
@@ -893,7 +893,7 @@ class Dense_Fourier_Net(object):
         if str.lower(self.actName) == 's2relu':
             H = 0.5 * tf.concat([tf.cos(H * repeat_scale), tf.sin(H * repeat_scale)], axis=-1)
         else:
-            H = tf.concat([tf.cos(H * repeat_scale), tf.sin(H * repeat_scale)], axis=-1)
+            H = sFourier*tf.concat([tf.cos(H * repeat_scale), tf.sin(H * repeat_scale)], axis=-1)
 
         #  ---resnet(one-step skip connection for two consecutive layers if have equal neurons）---
         hidden_record = self.hidden_units[0]

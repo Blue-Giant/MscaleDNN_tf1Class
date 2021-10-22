@@ -36,7 +36,7 @@ def dictionary_out2file(R_dic, log_fileout):
     DNN_tools.log_string('Activate function for NN-output: %s\n' % str(R_dic['name2act_out']), log_fileout)
     DNN_tools.log_string('hidden layer:%s\n' % str(R_dic['hidden_layers']), log_fileout)
     if R_dic['model2NN'] != 'DNN':
-        DNN_tools.log_string('The frequency to neural network: %s\n' % (R_dic['freqs']), log_fileout)
+        DNN_tools.log_string('The frequency to neural network: %s\n' % (R_dic['freq']), log_fileout)
 
     if R_dic['model2NN'] == 'DNN_FourierBase' or R_dic['model2NN'] == 'Fourier_DNN':
         DNN_tools.log_string('The scale-factor to fourier basis: %s\n' % (R_dic['sfourier']), log_fileout)

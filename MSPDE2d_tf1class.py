@@ -285,7 +285,7 @@ def solve_Multiscale_PDE(R):
 
             if R['PDE_type'] == 'Laplace' or R['PDE_type'] == 'general_Laplace':
                 UNN2train, loss_it = mscalednn.loss_it2Laplace(XY=XY_it, fside=f, loss_type=R['loss_type'])
-            elif R['PDE_type'] == 'pLaplace' or R['PDE_type'] == 'pLaplace_explicit' or R['PDE_type'] == 'pLaplace_explicit':
+            elif R['PDE_type'] == 'pLaplace' or R['PDE_type'] == 'pLaplace_implicit' or R['PDE_type'] == 'pLaplace_explicit':
                 UNN2train, loss_it = mscalednn.loss_it2pLaplace(XY=XY_it, Aeps=A_eps, fside=f, loss_type=R['loss_type'],
                                                                 p_index=2)
             elif R['PDE_type'] == 'Possion_Boltzmann':
@@ -636,13 +636,13 @@ if __name__ == "__main__":
 
     # &&&&&&&&&&&&&&&&&&& 使用的网络模型 &&&&&&&&&&&&&&&&&&&&&&&&&&&
     # R['model2NN'] = 'DNN'
-    # R['model2NN'] = 'DNN_scale'
-    # R['model2NN'] = 'DNN_adapt_scale'
-    R['model2NN'] = 'DNN_FourierBase'
-    # R['model2NN'] = 'DNN_WaveletBase'
+    # R['model2NN'] = 'Scale_DNN'
+    # R['model2NN'] = 'Adapt_scale_DNN'
+    R['model2NN'] = 'Fourier_DNN'
+    # R['model2NN'] = 'Wavelet_DNN'
 
     # &&&&&&&&&&&&&&&&&&&&&& 隐藏层的层数和每层神经元数目 &&&&&&&&&&&&&&&&&&&&&&&&&&&&
-    if R['model2NN'] == 'DNN_FourierBase':
+    if R['model2NN'] == 'Fourier_DNN':
         R['hidden_layers'] = (125, 200, 200, 100, 100, 80)  # 1*125+250*200+200*200+200*100+100*100+100*50+50*1=128205
     else:
         # R['hidden_layers'] = (100, 80, 80, 60, 40, 40)
@@ -667,19 +667,19 @@ if __name__ == "__main__":
 
     R['name2act_out'] = 'linear'
 
-    if R['model2NN'] == 'DNN_FourierBase' and R['name2act_hidden'] == 'tanh':
+    if R['model2NN'] == 'Fourier_DNN' and R['name2act_hidden'] == 'tanh':
         # R['sfourier'] = 0.5
         R['sfourier'] = 1.0
-    elif R['model2NN'] == 'DNN_FourierBase' and R['name2act_hidden'] == 's2relu':
+    elif R['model2NN'] == 'Fourier_DNN' and R['name2act_hidden'] == 's2relu':
         R['sfourier'] = 0.5
         # R['sfourier'] = 1.0
-    elif R['model2NN'] == 'DNN_FourierBase' and R['name2act_hidden'] == 'sinAddcos':
+    elif R['model2NN'] == 'Fourier_DNN' and R['name2act_hidden'] == 'sinAddcos':
         R['sfourier'] = 0.5
         # R['sfourier'] = 1.0
-    elif R['model2NN'] == 'DNN_FourierBase' and R['name2act_hidden'] == 'sin':
+    elif R['model2NN'] == 'Fourier_DNN' and R['name2act_hidden'] == 'sin':
         # R['sfourier'] = 0.5
         R['sfourier'] = 1.0
-    elif R['model2NN'] == 'DNN_FourierBase' and R['name2act_hidden'] == 'scsrelu':
+    elif R['model2NN'] == 'Fourier_DNN' and R['name2act_hidden'] == 'scsrelu':
         R['sfourier'] = 0.5
         # R['sfourier'] = 1.0
     else:
@@ -687,7 +687,7 @@ if __name__ == "__main__":
         # R['sfourier'] = 5.0
         R['sfourier'] = 0.75
 
-    if R['model'] == 'DNN_WaveletBase':
+    if R['model2NN'] == 'Wavelet_DNN':
         # R['freq'] = np.concatenate(([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9], np.arange(1, 100 - 9)), axis=0)
         # R['freq'] = np.concatenate(([0.25, 0.5, 0.6, 0.7, 0.8, 0.9], np.arange(1, 100 - 6)), axis=0)
         # R['freq'] = np.concatenate(([0.5, 0.6, 0.7, 0.8, 0.9], np.arange(1, 100 - 5)), axis=0)
