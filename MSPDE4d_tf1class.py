@@ -29,11 +29,11 @@ class MscaleDNN(object):
             self.DNN = DNN_Class_base.Pure_Dense_Net(
                 indim=input_dim, outdim=out_dim, hidden_units=hidden_layer, name2Model=Model_name, actName2in=name2actIn,
                 actName=name2actHidden, actName2out=name2actOut, type2float=type2numeric)
-        elif 'SCALE_DNN' == str.upper(Model_name):
+        elif 'SCALE_DNN' == str.upper(Model_name) or 'DNN_SCALE' == str.upper(Model_name):
             self.DNN = DNN_Class_base.Dense_ScaleNet(
                 indim=input_dim, outdim=out_dim, hidden_units=hidden_layer, name2Model=Model_name, actName2in=name2actIn,
                 actName=name2actHidden, actName2out=name2actOut, type2float=type2numeric)
-        elif 'FOURIER_DNN' == str.upper(Model_name):
+        elif 'FOURIER_DNN' == str.upper(Model_name) or 'DNN_FOURIERBASE' == str.upper(Model_name):
             self.DNN = DNN_Class_base.Dense_Fourier_Net(
                 indim=input_dim, outdim=out_dim, hidden_units=hidden_layer, name2Model=Model_name, actName2in=name2actIn,
                 actName=name2actHidden, actName2out=name2actOut, type2float=type2numeric)
