@@ -28,7 +28,7 @@ import DNN_Log_Print
 
 class MscaleDNN(object):
     def __init__(self, input_dim=5, out_dim=1, hidden_layer=None, Model_name='DNN', name2actIn='relu',
-                 name2actHidden='relu', name2actOut='linear', opt2regular_WB='L2', type2numeric='float32', freq=None):
+                 name2actHidden='relu', name2actOut='linear', opt2regular_WB='L2', type2numeric='float32', factor2freq=None):
         super(MscaleDNN, self).__init__()
         if 'DNN' == str.upper(Model_name):
             self.DNN = DNN_Class_base.Pure_Dense_Net(
@@ -50,11 +50,11 @@ class MscaleDNN(object):
         elif type2numeric == 'float16':
             self.float_type = tf.float16
 
-        self.freq = freq
+        self.factor2freq = factor2freq
         self.opt2regular_WB = opt2regular_WB
 
     def loss_it2Laplace(self, XYZST=None, fside=None, loss_type='ritz_loss'):
-        UNN = self.DNN(XYZST, scale=self.freq)
+        UNN = self.DNN(XYZST, scale=self.factor2freq)
         X = tf.reshape(XYZST[:, 0], shape=[-1, 1])
         Y = tf.reshape(XYZST[:, 1], shape=[-1, 1])
         Z = tf.reshape(XYZST[:, 2], shape=[-1, 1])
@@ -90,7 +90,7 @@ class MscaleDNN(object):
         return UNN, loss_it
 
     def loss_it2pLaplace(self, XYZST=None, Aeps=None, fside=None, loss_type='ritz_loss', p_index=2):
-        UNN = self.DNN(XYZST, scale=self.freq)
+        UNN = self.DNN(XYZST, scale=self.factor2freq)
         X = tf.reshape(XYZST[:, 0], shape=[-1, 1])
         Y = tf.reshape(XYZST[:, 1], shape=[-1, 1])
         Z = tf.reshape(XYZST[:, 2], shape=[-1, 1])
@@ -108,7 +108,7 @@ class MscaleDNN(object):
         return UNN, loss_it
 
     def loss_it2Possion_Boltzmann(self, XYZST=None, Aeps=None, fside=None, loss_type='ritz_loss', p_index=2):
-        UNN = self.DNN(XYZST, scale=self.freq)
+        UNN = self.DNN(XYZST, scale=self.factor2freq)
         X = tf.reshape(XYZST[:, 0], shape=[-1, 1])
         Y = tf.reshape(XYZST[:, 1], shape=[-1, 1])
         Z = tf.reshape(XYZST[:, 2], shape=[-1, 1])
@@ -126,14 +126,18 @@ class MscaleDNN(object):
 
         return UNN, loss_it
 
-    def loss2bd(self, XYZST_bd=None, Ubd_exact=None, freq=None):
+    def loss2bd(self, XYZST_bd=None, Ubd_exact=None, if_lambda2Ubd=True):
         X_bd = tf.reshape(XYZST_bd[:, 0], shape=[-1, 1])
         Y_bd = tf.reshape(XYZST_bd[:, 1], shape=[-1, 1])
         Z_bd = tf.reshape(XYZST_bd[:, 1], shape=[-1, 1])
         S_bd = tf.reshape(XYZST_bd[:, 1], shape=[-1, 1])
         T_bd = tf.reshape(XYZST_bd[:, 1], shape=[-1, 1])
-        Ubd = Ubd_exact(X_bd, Y_bd, Z_bd, S_bd, T_bd)
-        UNN_bd = self.DNN(XYZST_bd, scale=freq)
+        if if_lambda2Ubd:
+            Ubd = Ubd_exact(X_bd, Y_bd, Z_bd, S_bd, T_bd)
+        else:
+            Ubd = Ubd_exact
+
+        UNN_bd = self.DNN(XYZST_bd, scale=self.factor2freq)
         loss_bd_square = tf.square(UNN_bd - Ubd)
         loss_bd = tf.reduce_mean(loss_bd_square)
         return loss_bd
@@ -143,7 +147,7 @@ class MscaleDNN(object):
         return sum2WB
 
     def evalue_MscaleDNN(self, XYZST_points=None):
-        UNN = self.DNN(XYZST_points, scale=self.freq)
+        UNN = self.DNN(XYZST_points, scale=self.factor2freq)
         return UNN
 
 
@@ -193,7 +197,7 @@ def solve_Multiscale_PDE(R):
 
     mscalednn = MscaleDNN(input_dim=R['input_dim'], out_dim=R['output_dim'], hidden_layer=R['hidden_layers'],
                           Model_name=R['model2NN'], name2actIn=R['name2act_in'], name2actHidden=R['name2act_hidden'],
-                          name2actOut=R['name2act_out'], opt2regular_WB='L0', type2numeric='float32', freq=R['freq'])
+                          name2actOut=R['name2act_out'], opt2regular_WB='L0', type2numeric='float32', factor2freq=R['freq'])
     global_steps = tf.compat.v1.Variable(0, trainable=False)
     with tf.device('/gpu:%s' % (R['gpuNo'])):
         with tf.compat.v1.variable_scope('vscope', reuse=tf.compat.v1.AUTO_REUSE):
