@@ -119,14 +119,13 @@ class MscaleDNN(object):
         else:
             force_side = fside
 
-
         UNN = self.DNN(XYZ, scale=self.factor2freq)
         dUNN = tf.gradients(UNN, XYZ)[0]  # * 行 2 列
         # 变分形式的loss of interior，训练得到的 UNN 是 * 行 1 列
         if str.lower(loss_type) == 'ritz_loss' or str.lower(loss_type) == 'variational_loss':
             dUNN_Norm = tf.reshape(tf.sqrt(tf.reduce_sum(tf.square(dUNN), axis=-1)), shape=[-1, 1])  # 按行求和
             AdUNN_pNorm = tf.multiply(a_eps, tf.pow(dUNN_Norm, p_index))
-            loss_it_ritz = (1.0/p_index)*AdUNN_pNorm-tf.multiply(tf.reshape(fside(X, Y, Z), shape=[-1, 1]), UNN)
+            loss_it_ritz = (1.0/p_index)*AdUNN_pNorm-tf.multiply(tf.reshape(force_side, shape=[-1, 1]), UNN)
             loss_it = tf.reduce_mean(loss_it_ritz)
         return UNN, loss_it
 
@@ -171,12 +170,15 @@ class MscaleDNN(object):
 
         return UNN, loss_it
 
-    def loss2bd(self, XYZ_bd=None, Ubd_exact=None, factor2freq=None):
+    def loss2bd(self, XYZ_bd=None, Ubd_exact=None, if_lambda2Ubd=True):
         X_bd = tf.reshape(XYZ_bd[:, 0], shape=[-1, 1])
         Y_bd = tf.reshape(XYZ_bd[:, 1], shape=[-1, 1])
         Z_bd = tf.reshape(XYZ_bd[:, 2], shape=[-1, 1])
-        Ubd = Ubd_exact(X_bd, Y_bd, Z_bd)
-        UNN_bd = self.DNN(XYZ_bd, scale=factor2freq)
+        if if_lambda2Ubd:
+            Ubd = Ubd_exact(X_bd, Y_bd, Z_bd)
+        else:
+            Ubd=Ubd_exact
+        UNN_bd = self.DNN(XYZ_bd, scale=self.factor2freq)
         loss_bd_square = tf.square(UNN_bd - Ubd)
         loss_bd = tf.reduce_mean(loss_bd_square)
         return loss_bd
