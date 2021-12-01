@@ -28,7 +28,7 @@ import DNN_Log_Print
 class MscaleDNN(object):
     def __init__(self, input_dim=4, out_dim=1, hidden_layer=None, Model_name='DNN', name2actIn='relu',
                  name2actHidden='relu', name2actOut='linear', opt2regular_WB='L2', type2numeric='float32',
-                 factor2freq=None):
+                 factor2freq=None, sFourier=1.0):
         super(MscaleDNN, self).__init__()
         if 'DNN' == str.upper(Model_name):
             self.DNN = DNN_Class_base.Pure_Dense_Net(
@@ -52,6 +52,7 @@ class MscaleDNN(object):
 
         self.input_dim = input_dim
         self.factor2freq = factor2freq
+        self.sFourier = sFourier
         self.opt2regular_WB = opt2regular_WB
 
     def loss_it2Laplace(self, X=None, fside=None, if_lambda2fside=True, loss_type='ritz_loss'):
@@ -95,8 +96,8 @@ class MscaleDNN(object):
         else:
             force_side = fside
 
-        UNN = self.DNN(X, scale=self.factor2freq)
-        dUNN = tf.gradients(UNN, X)[0]  # * 行 2 列
+        UNN = self.DNN(X, scale=self.factor2freq, sFourier=self.sFourier)
+        dUNN = tf.gradients(UNN, X)[0]
 
         if str.lower(loss_type) == 'ritz_loss' or str.lower(loss_type) == 'variational_loss':
             dUNN_Norm = tf.reshape(tf.sqrt(tf.reduce_sum(tf.square(dUNN), axis=-1)), shape=[-1, 1])  # 按行求和
@@ -214,8 +215,8 @@ class MscaleDNN(object):
             else:
                 force_side = fside
 
-        UNN = self.DNN(X, scale=self.factor2freq)
-        dUNN = tf.gradients(UNN, X)[0]  # * 行 2 列
+        UNN = self.DNN(X, scale=self.factor2freq, sFourier=self.sFourier)
+        dUNN = tf.gradients(UNN, X)[0]
         # 变分形式的loss of interior，训练得到的 UNN 是 * 行 1 列
         if str.lower(loss_type) == 'ritz_loss' or str.lower(loss_type) == 'variational_loss':
             dUNN_Norm = tf.reshape(tf.sqrt(tf.reduce_sum(tf.square(dUNN), axis=-1)), shape=[-1, 1])  # 按行求和
@@ -335,8 +336,8 @@ class MscaleDNN(object):
             else:
                 force_side = fside
 
-        UNN = self.DNN(X, scale=self.factor2freq)
-        dUNN = tf.gradients(UNN, X)[0]  # * 行 2 列
+        UNN = self.DNN(X, scale=self.factor2freq, sFourier=self.sFourier)
+        dUNN = tf.gradients(UNN, X)[0]
         if str.lower(loss_type) == 'ritz_loss' or str.lower(loss_type) == 'variational_loss':
             dUNN_Norm = tf.reshape(tf.sqrt(tf.reduce_sum(tf.square(dUNN), axis=-1)), shape=[-1, 1])  # 按行求和
             AdUNN_pNorm = tf.multiply(a_eps, tf.pow(dUNN_Norm, p_index))
@@ -382,7 +383,7 @@ class MscaleDNN(object):
         else:
             Ubd = Ubd_exact
 
-        UNN_bd = self.DNN(X_bd, scale=self.factor2freq)
+        UNN_bd = self.DNN(X_bd, scale=self.factor2freq, sFourier=self.sFourier)
         loss_bd_square = tf.square(UNN_bd - Ubd)
         loss_bd = tf.reduce_mean(loss_bd_square)
         return loss_bd
@@ -392,7 +393,7 @@ class MscaleDNN(object):
         return sum2WB
 
     def evalue_MscaleDNN(self, X_points=None):
-        UNN = self.DNN(X_points, scale=self.factor2freq)
+        UNN = self.DNN(X_points, scale=self.factor2freq, sFourier=self.sFourier)
         return UNN
 
 
@@ -478,7 +479,8 @@ def solve_Multiscale_PDE(R):
 
     mscalednn = MscaleDNN(input_dim=R['input_dim'], out_dim=R['output_dim'], hidden_layer=R['hidden_layers'],
                           Model_name=R['model2NN'], name2actIn=R['name2act_in'], name2actHidden=R['name2act_hidden'],
-                          name2actOut=R['name2act_out'], opt2regular_WB='L0', type2numeric='float32', factor2freq=R['freq'])
+                          name2actOut=R['name2act_out'], opt2regular_WB='L0', type2numeric='float32',
+                          factor2freq=R['freq'], sFourier=R['sfourier'])
     global_steps = tf.compat.v1.Variable(0, trainable=False)
     with tf.device('/gpu:%s' % (R['gpuNo'])):
         with tf.compat.v1.variable_scope('vscope', reuse=tf.compat.v1.AUTO_REUSE):
@@ -494,18 +496,18 @@ def solve_Multiscale_PDE(R):
             Y_it = tf.reshape(XY_it[:, 1], shape=[-1, 1])
 
             if R['PDE_type'] == 'Laplace' or R['PDE_type'] == 'general_Laplace':
-                UNN2train, loss_it = mscalednn.loss_it2Laplace(XY=XY_it, fside=f, loss_type=R['loss_type'])
+                UNN2train, loss_it = mscalednn.loss_it2Laplace(X=XY_it, fside=f, loss_type=R['loss_type'])
             elif R['PDE_type'] == 'pLaplace' or R['PDE_type'] == 'pLaplace_implicit' or R['PDE_type'] == 'pLaplace_explicit':
-                UNN2train, loss_it = mscalednn.loss_it2pLaplace(XY=XY_it, Aeps=A_eps, fside=f, loss_type=R['loss_type'],
+                UNN2train, loss_it = mscalednn.loss_it2pLaplace(X=XY_it, Aeps=A_eps, fside=f, loss_type=R['loss_type'],
                                                                 p_index=2)
             elif R['PDE_type'] == 'Possion_Boltzmann':
                 UNN2train, loss_it = mscalednn.loss_it2Possion_Boltzmann(
-                    XY=XY_it, Aeps=A_eps, fside=f, loss_type=R['loss_type'], p_index=2)
+                    X=XY_it, Aeps=A_eps, fside=f, loss_type=R['loss_type'], p_index=2)
 
-            loss_bd2left = mscalednn.loss2bd(XY_bd=XY_left, Ubd_exact=u_left)
-            loss_bd2right = mscalednn.loss2bd(XY_bd=XY_right, Ubd_exact=u_right)
-            loss_bd2bottom = mscalednn.loss2bd(XY_bd=XY_bottom, Ubd_exact=u_bottom)
-            loss_bd2top = mscalednn.loss2bd(XY_bd=XY_top, Ubd_exact=u_top)
+            loss_bd2left = mscalednn.loss2bd(X_bd=XY_left, Ubd_exact=u_left)
+            loss_bd2right = mscalednn.loss2bd(X_bd=XY_right, Ubd_exact=u_right)
+            loss_bd2bottom = mscalednn.loss2bd(X_bd=XY_bottom, Ubd_exact=u_bottom)
+            loss_bd2top = mscalednn.loss2bd(X_bd=XY_top, Ubd_exact=u_top)
             loss_bd = loss_bd2left + loss_bd2right + loss_bd2bottom + loss_bd2top
 
             regularSum2WB = mscalednn.get_regularSum2WB()
@@ -536,7 +538,7 @@ def solve_Multiscale_PDE(R):
                 train_mse = tf.constant(0.0)
                 train_rel = tf.constant(0.0)
 
-            UNN2test = mscalednn.evalue_MscaleDNN(XY_points=XY_it)
+            UNN2test = mscalednn.evalue_MscaleDNN(X_points=XY_it)
 
     t0 = time.time()
     loss_it_all, loss_bd_all, loss_all, train_mse_all, train_rel_all = [], [], [], [], []  # 空列表, 使用 append() 添加元素
@@ -877,6 +879,7 @@ if __name__ == "__main__":
 
     R['name2act_out'] = 'linear'
 
+    R['sfourier'] = 1.0
     if R['model2NN'] == 'Fourier_DNN' and R['name2act_hidden'] == 'tanh':
         # R['sfourier'] = 0.5
         R['sfourier'] = 1.0

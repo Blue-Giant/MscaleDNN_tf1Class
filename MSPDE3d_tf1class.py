@@ -28,7 +28,8 @@ import DNN_Log_Print
 
 class MscaleDNN(object):
     def __init__(self, input_dim=4, out_dim=1, hidden_layer=None, Model_name='DNN', name2actIn='relu',
-                 name2actHidden='relu', name2actOut='linear', opt2regular_WB='L2', type2numeric='float32', factor2freq=None):
+                 name2actHidden='relu', name2actOut='linear', opt2regular_WB='L2', type2numeric='float32',
+                 factor2freq=None, sFourier=1.0):
         super(MscaleDNN, self).__init__()
         if 'DNN' == str.upper(Model_name):
             self.DNN = DNN_Class_base.Pure_Dense_Net(
@@ -52,6 +53,7 @@ class MscaleDNN(object):
 
         self.factor2freq = factor2freq
         self.opt2regular_WB = opt2regular_WB
+        self.sFourier = sFourier
 
     def loss_it2Laplace(self, XYZ=None, fside=None, if_lambda2fside=True, loss_type='ritz_loss'):
         assert (XYZ is not None)
@@ -71,8 +73,8 @@ class MscaleDNN(object):
         else:
             force_side = fside
 
-        UNN = self.DNN(XYZ, scale=self.factor2freq)
-        dUNN = tf.gradients(UNN, XYZ)[0]  # * 行 2 列
+        UNN = self.DNN(XYZ, scale=self.factor2freq, sFourier=self.sFourier)
+        dUNN = tf.gradients(UNN, XYZ)[0]                                      # * 行 3 列
 
         if str.lower(loss_type) == 'ritz_loss' or str.lower(loss_type) == 'variational_loss':
             dUNN_Norm = tf.reshape(tf.sqrt(tf.reduce_sum(tf.square(dUNN), axis=-1)), shape=[-1, 1])  # 按行求和
@@ -119,8 +121,8 @@ class MscaleDNN(object):
         else:
             force_side = fside
 
-        UNN = self.DNN(XYZ, scale=self.factor2freq)
-        dUNN = tf.gradients(UNN, XYZ)[0]  # * 行 2 列
+        UNN = self.DNN(XYZ, scale=self.factor2freq, sFourier=self.sFourier)
+        dUNN = tf.gradients(UNN, XYZ)[0]                                    # * 行 2 列
         # 变分形式的loss of interior，训练得到的 UNN 是 * 行 1 列
         if str.lower(loss_type) == 'ritz_loss' or str.lower(loss_type) == 'variational_loss':
             dUNN_Norm = tf.reshape(tf.sqrt(tf.reduce_sum(tf.square(dUNN), axis=-1)), shape=[-1, 1])  # 按行求和
@@ -159,7 +161,7 @@ class MscaleDNN(object):
         else:
             force_side = fside
 
-        UNN = self.DNN(XYZ, scale=self.factor2freq)
+        UNN = self.DNN(XYZ, scale=self.factor2freq, sFourier=self.sFourier)
         dUNN = tf.gradients(UNN, XYZ)[0]  # * 行 2 列
         if str.lower(loss_type) == 'ritz_loss' or str.lower(loss_type) == 'variational_loss':
             dUNN_Norm = tf.reshape(tf.sqrt(tf.reduce_sum(tf.square(dUNN), axis=-1)), shape=[-1, 1])  # 按行求和
@@ -178,7 +180,7 @@ class MscaleDNN(object):
             Ubd = Ubd_exact(X_bd, Y_bd, Z_bd)
         else:
             Ubd=Ubd_exact
-        UNN_bd = self.DNN(XYZ_bd, scale=self.factor2freq)
+        UNN_bd = self.DNN(XYZ_bd, scale=self.factor2freq, sFourier=self.sFourier)
         loss_bd_square = tf.square(UNN_bd - Ubd)
         loss_bd = tf.reduce_mean(loss_bd_square)
         return loss_bd
@@ -188,7 +190,7 @@ class MscaleDNN(object):
         return sum2WB
 
     def evalue_MscaleDNN(self, XYZ_points=None):
-        UNN = self.DNN(XYZ_points, scale=self.factor2freq)
+        UNN = self.DNN(XYZ_points, scale=self.factor2freq, sFourier=self.sFourier)
         return UNN
 
 
@@ -240,7 +242,8 @@ def solve_Multiscale_PDE(R):
 
     mscalednn = MscaleDNN(input_dim=R['input_dim'], out_dim=R['output_dim'], hidden_layer=R['hidden_layers'],
                           Model_name=R['model2NN'], name2actIn=R['name2act_in'], name2actHidden=R['name2act_hidden'],
-                          name2actOut=R['name2act_out'], opt2regular_WB='L0', type2numeric='float32', factor2freq=R['freq'])
+                          name2actOut=R['name2act_out'], opt2regular_WB='L0', type2numeric='float32',
+                          factor2freq=R['freq'], sFourier=R['sfourier'])
     global_steps = tf.compat.v1.Variable(0, trainable=False)
     with tf.device('/gpu:%s' % (R['gpuNo'])):
         with tf.variable_scope('vscope', reuse=tf.AUTO_REUSE):
@@ -583,7 +586,8 @@ if __name__ == "__main__":
         # R['hidden_layers'] = (2000, 1500, 1000, 500, 250)
 
     # &&&&&&&&&&&&&&&&&&& 激活函数的选择 &&&&&&&&&&&&&&&&&&&&&&&&&&&&&
-    R['name2act_in'] = 'relu'
+    # R['name2act_in'] = 'relu'
+    R['name2act_in'] = 'tanh'
 
     # R['name2act_hidden'] = 'relu'
     R['name2act_hidden'] = 'tanh'
@@ -598,6 +602,7 @@ if __name__ == "__main__":
 
     R['name2act_out'] = 'linear'
 
+    R['sfourier']=1.0
     if R['model2NN'] == 'Fourier_DNN' and R['name2act_hidden'] == 'tanh':
         # R['sfourier'] = 0.5
         R['sfourier'] = 1.0

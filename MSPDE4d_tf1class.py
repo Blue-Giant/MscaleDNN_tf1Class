@@ -23,7 +23,8 @@ import DNN_Log_Print
 
 class MscaleDNN(object):
     def __init__(self, input_dim=4, out_dim=1, hidden_layer=None, Model_name='DNN', name2actIn='relu',
-                 name2actHidden='relu', name2actOut='linear', opt2regular_WB='L2', type2numeric='float32', factor2freq=None):
+                 name2actHidden='relu', name2actOut='linear', opt2regular_WB='L2', type2numeric='float32',
+                 factor2freq=None, sFourier=1.0):
         super(MscaleDNN, self).__init__()
         if 'DNN' == str.upper(Model_name):
             self.DNN = DNN_Class_base.Pure_Dense_Net(
@@ -47,6 +48,7 @@ class MscaleDNN(object):
 
         self.factor2freq = factor2freq
         self.opt2regular_WB = opt2regular_WB
+        self.sFourier = sFourier
 
     def loss_it2Laplace(self, XYZS=None, fside=None, if_lambda2fside=True, loss_type='ritz_loss'):
         assert (XYZS is not None)
@@ -67,7 +69,7 @@ class MscaleDNN(object):
         else:
             force_side = fside
 
-        UNN = self.DNN(XYZS, scale=self.factor2freq)
+        UNN = self.DNN(XYZS, scale=self.factor2freq, sFourier=self.sFourier)
         dUNN = tf.gradients(UNN, XYZS)[0]  # * 行 2 列
 
         if str.lower(loss_type) == 'ritz_loss' or str.lower(loss_type) == 'variational_loss':
@@ -119,7 +121,7 @@ class MscaleDNN(object):
         else:
             force_side = fside
 
-        UNN = self.DNN(XYZS, scale=self.factor2freq)
+        UNN = self.DNN(XYZS, scale=self.factor2freq, sFourier=self.sFourier)
         dUNN = tf.gradients(UNN, XYZS)[0]  # * 行 2 列
         # 变分形式的loss of interior，训练得到的 UNN 是 * 行 1 列
         if str.lower(loss_type) == 'ritz_loss' or str.lower(loss_type) == 'variational_loss':
@@ -160,7 +162,7 @@ class MscaleDNN(object):
         else:
             force_side = fside
 
-        UNN = self.DNN(XYZS, scale=self.factor2freq)
+        UNN = self.DNN(XYZS, scale=self.factor2freq, sFourier=self.sFourier)
         dUNN = tf.gradients(UNN, XYZS)[0]  # * 行 2 列
         if str.lower(loss_type) == 'ritz_loss' or str.lower(loss_type) == 'variational_loss':
             dUNN_Norm = tf.reshape(tf.sqrt(tf.reduce_sum(tf.square(dUNN), axis=-1)), shape=[-1, 1])  # 按行求和
@@ -181,7 +183,7 @@ class MscaleDNN(object):
         else:
             Ubd=Ubd_exact
 
-        UNN_bd = self.DNN(XYZS_bd, scale=self.factor2freq)
+        UNN_bd = self.DNN(XYZS_bd, scale=self.factor2freq, sFourier=self.sFourier)
         loss_bd_square = tf.square(UNN_bd - Ubd)
         loss_bd = tf.reduce_mean(loss_bd_square)
         return loss_bd
@@ -191,7 +193,7 @@ class MscaleDNN(object):
         return sum2WB
 
     def evalue_MscaleDNN(self, XYZS_points=None):
-        UNN = self.DNN(XYZS_points, scale=self.factor2freq)
+        UNN = self.DNN(XYZS_points, scale=self.factor2freq, sFourier=self.sFourier)
         return UNN
 
 
@@ -238,7 +240,7 @@ def solve_Multiscale_PDE(R):
     mscalednn = MscaleDNN(input_dim=R['input_dim'], out_dim=R['output_dim'], hidden_layer=R['hidden_layers'],
                           Model_name=R['model2NN'], name2actIn=R['name2act_in'], name2actHidden=R['name2act_hidden'],
                           name2actOut=R['name2act_out'], opt2regular_WB='L0', type2numeric='float32',
-                          factor2freq=R['freq'])
+                          factor2freq=R['freq'], sFourier=R['sfourier'])
 
     global_steps = tf.compat.v1.Variable(0, trainable=False)
     with tf.device('/gpu:%s' % (R['gpuNo'])):
@@ -600,6 +602,7 @@ if __name__ == "__main__":
     # R['activate_func'] = 'elu'
     # R['activate_func'] = 'phi'
 
+    R['sfourier'] = 1.0
     if R['model'] == 'DNN_FourierBase' and R['activate_func'] == 'tanh':
         R['sfourier'] = 0.5
         # R['sfourier'] = 1.0

@@ -30,7 +30,7 @@ import DNN_Log_Print
 class MscaleDNN(object):
     def __init__(self, input_dim=2, out_dim=1, hidden_layer=None, Model_name='DNN', name2actIn='relu',
                  name2actHidden='relu', name2actOut='linear', opt2regular_WB='L2', type2numeric='float32',
-                 factor2freq=None):
+                 factor2freq=None, sFourier=1.0):
         super(MscaleDNN, self).__init__()
         if 'DNN' == str.upper(Model_name):
             self.DNN = DNN_Class_base.Pure_Dense_Net(
@@ -54,6 +54,7 @@ class MscaleDNN(object):
 
         self.factor2freq = factor2freq
         self.opt2regular_WB = opt2regular_WB
+        self.sFourier = sFourier
 
     def loss_it2Laplace(self, X=None, fside=None, if_lambda2fside=True, loss_type='ritz_loss'):
         assert (X is not None)
@@ -69,8 +70,8 @@ class MscaleDNN(object):
         else:
             force_side = fside
 
-        UNN = self.DNN(X, scale=self.factor2freq)
-        dUNN = tf.gradients(UNN, X)[0]  # * 行 2 列
+        UNN = self.DNN(X, scale=self.factor2freq, sFourier=self.sFourier)
+        dUNN = tf.gradients(UNN, X)[0]
 
         if str.lower(loss_type) == 'ritz_loss' or str.lower(loss_type) == 'variational_loss':
             dUNN_Norm = tf.reshape(tf.sqrt(tf.reduce_sum(tf.square(dUNN), axis=-1)), shape=[-1, 1])  # 按行求和
@@ -105,8 +106,8 @@ class MscaleDNN(object):
         else:
             force_side = fside
 
-        UNN = self.DNN(X, scale=self.factor2freq)
-        dUNN = tf.gradients(UNN, X)[0]  # * 行 2 列
+        UNN = self.DNN(X, scale=self.factor2freq, sFourier=self.sFourier)
+        dUNN = tf.gradients(UNN, X)[0]
         # 变分形式的loss of interior，训练得到的 UNN 是 * 行 1 列
         if str.lower(loss_type) == 'ritz_loss' or str.lower(loss_type) == 'variational_loss':
             dUNN_Norm = tf.reshape(tf.sqrt(tf.reduce_sum(tf.square(dUNN), axis=-1)), shape=[-1, 1])  # 按行求和
@@ -117,14 +118,37 @@ class MscaleDNN(object):
 
     def loss_it2Possion_Boltzmann(self, X=None, Aeps=None, if_lambda2Aeps=True, Kappa_eps=None, if_lambda2Kappa=True,
                                   fside=None, if_lambda2fside=True, loss_type='ritz_loss', p_index=2):
-        UNN = self.DNN(X, scale=self.factor2freq)
-        a_eps = Aeps(X)  # * 行 1 列
+        assert (X is not None)
+        assert (fside is not None)
 
-        dUNN = tf.gradients(UNN, X)[0]  # * 行 2 列
+        shape2X = X.get_shape().as_list()
+        lenght2X_shape = len(shape2X)
+        assert (lenght2X_shape == 2)
+        assert (shape2X[-1] == 1)
+
+        if if_lambda2Aeps:
+            a_eps = Aeps(X)  # * 行 1 列
+        else:
+            a_eps = Aeps
+
+        if if_lambda2Kappa:
+            kappa = Kappa_eps(X)
+        else:
+            kappa = Kappa_eps
+
+        if if_lambda2fside:
+            force_side = fside(X)
+        else:
+            force_side = fside
+
+        UNN = self.DNN(X, scale=self.factor2freq, sFourier=self.sFourier)
+
+        dUNN = tf.gradients(UNN, X)[0]
         if str.lower(loss_type) == 'ritz_loss' or str.lower(loss_type) == 'variational_loss':
             dUNN_Norm = tf.reshape(tf.sqrt(tf.reduce_sum(tf.square(dUNN), axis=-1)), shape=[-1, 1])  # 按行求和
             AdUNN_pNorm = tf.multiply(a_eps, tf.pow(dUNN_Norm, p_index))
-            loss_it_ritz = (1.0 / p_index) * AdUNN_pNorm - tf.multiply(tf.reshape(fside(X), shape=[-1, 1]), UNN)
+            loss_it_ritz = (1.0 / p_index) * (AdUNN_pNorm + kappa * UNN * UNN) - \
+                           tf.multiply(tf.reshape(force_side, shape=[-1, 1]), UNN)
             loss_it = tf.reduce_mean(loss_it_ritz)
 
         return UNN, loss_it
@@ -143,7 +167,7 @@ class MscaleDNN(object):
         else:
             Ubd = Ubd_exact
 
-        UNN_bd = self.DNN(X_bd, scale=self.factor2freq)
+        UNN_bd = self.DNN(X_bd, scale=self.factor2freq, sFourier=self.sFourier)
         loss_bd_square = tf.square(UNN_bd - Ubd)
         loss_bd = tf.reduce_mean(loss_bd_square)
         return loss_bd
@@ -159,7 +183,7 @@ class MscaleDNN(object):
         assert (lenght2X_shape == 2)
         assert (shape2X[-1] == 1)
 
-        UNN = self.DNN(X_points, scale=self.factor2freq)
+        UNN = self.DNN(X_points, scale=self.factor2freq, sFourier=self.sFourier)
         return UNN
 
 
@@ -243,14 +267,14 @@ def solve_Multiscale_PDE(R):
     mscalednn = MscaleDNN(input_dim=R['input_dim'], out_dim=R['output_dim'], hidden_layer=R['hidden_layers'],
                           Model_name=R['model2NN'], name2actIn=R['name2act_in'], name2actHidden=R['name2act_hidden'],
                           name2actOut=R['name2act_out'], opt2regular_WB='L0', type2numeric='float32',
-                          factor2freq=R['freq'])
+                          factor2freq=R['freq'], sFourier=R['sfourier'])
 
     global_steps = tf.compat.v1.Variable(0, trainable=False)
     with tf.device('/gpu:%s' % (R['gpuNo'])):
         with tf.compat.v1.variable_scope('vscope', reuse=tf.compat.v1.AUTO_REUSE):
-            X_it = tf.compat.v1.placeholder(tf.float32, name='X_it', shape=[None, input_dim])  # * 行 1 列
-            X_left = tf.compat.v1.placeholder(tf.float32, name='X_left', shape=[None, input_dim])  # * 行 1 列
-            X_right = tf.compat.v1.placeholder(tf.float32, name='X_right', shape=[None, input_dim])  # * 行 1 列
+            X_it = tf.compat.v1.placeholder(tf.float32, name='X_it', shape=[None, input_dim])           # * 行 1 列
+            X_left = tf.compat.v1.placeholder(tf.float32, name='X_left', shape=[None, input_dim])       # * 行 1 列
+            X_right = tf.compat.v1.placeholder(tf.float32, name='X_right', shape=[None, input_dim])     # * 行 1 列
             boundary_penalty = tf.compat.v1.placeholder_with_default(input=1e3, shape=[], name='bd_p')
             in_learning_rate = tf.compat.v1.placeholder_with_default(input=1e-5, shape=[], name='lr')
 
@@ -586,7 +610,7 @@ if __name__ == "__main__":
     # R['name2act_hidden'] = 'phi'
 
     R['name2act_out'] = 'linear'
-
+    R['sfourier'] = 1.0
     if R['model2NN'] == 'Fourier_DNN' and R['name2act_hidden'] == 'tanh':
         R['sfourier'] = 1.0
     elif R['model2NN'] == 'Fourier_DNN' and R['name2act_hidden'] == 's2relu':

@@ -306,7 +306,7 @@ class my_actFunc(object):
 
 
 # This class of Dense_Net is an union for the normal-DNN, Scale-DNN and Fourier-DNN, but it have some problems.
-# I implement they by three classes:Pure_Dense_Net, Dense_ScaleNet, Dense_Fourier_Net
+# I implement them by three classes:Pure_Dense_Net, Dense_ScaleNet, Dense_Fourier_Net
 class Dense_Net(object):
     """
     Args:
