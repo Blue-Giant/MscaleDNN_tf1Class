@@ -164,8 +164,15 @@ class MscaleDNN(object):
         return UNN, loss_it
 
     def loss2bd(self, XY_bd=None, Ubd_exact=None, if_lambda2Ubd=True):
-        X_bd = tf.reshape(XY_bd[:, 0], shape=[-1, 1])
-        Y_bd = tf.reshape(XY_bd[:, 1], shape=[-1, 1])
+        assert (XY_bd is not None)
+        assert (Ubd_exact is not None)
+
+        shape2XY = np.shape(XY_bd)
+        lenght2XY_shape = len(shape2XY)
+        assert (lenght2XY_shape == 2)
+        assert (shape2XY[-1] == 2)
+        X_bd = np.reshape(XY_bd[:, 0], newshape=[-1, 1])
+        Y_bd = np.reshape(XY_bd[:, 1], newshape=[-1, 1])
 
         if if_lambda2Ubd:
             Ubd = Ubd_exact(X_bd, Y_bd)
