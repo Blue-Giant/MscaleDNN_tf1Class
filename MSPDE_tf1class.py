@@ -17,9 +17,7 @@ import MS_LaplaceEqs
 import MS_BoltzmannEqs
 import MS_ConvectionEqs
 import General_Laplace
-import matData2Laplace
-import matData2pLaplace
-import matData2Boltzmann
+import Load_data2Mat
 import saveData
 import plotData
 import DNN_Log_Print
@@ -39,7 +37,7 @@ class MscaleDNN(object):
                 indim=input_dim, outdim=out_dim, hidden_units=hidden_layer, name2Model=Model_name, actName2in=name2actIn,
                 actName=name2actHidden, actName2out=name2actOut, type2float=type2numeric)
         elif 'FOURIER_DNN' == str.upper(Model_name) or 'DNN_FOURIERBASE' == str.upper(Model_name):
-            self.DNN = DNN_Class_base.Dense_Fourier_Net(
+            self.DNN = DNN_Class_base.Dense_FourierNet(
                 indim=input_dim, outdim=out_dim, hidden_units=hidden_layer, name2Model=Model_name, actName2in=name2actIn,
                 actName=name2actHidden, actName2out=name2actOut, type2float=type2numeric)
 
@@ -559,7 +557,7 @@ def solve_Multiscale_PDE(R):
         saveData.save_testData_or_solus2mat(test_xy_bach, dataName='testXY', outPath=R['FolderName'])
     else:
         if R['PDE_type'] == 'pLaplace_implicit' or R['PDE_type'] == 'pLaplace_explicit':
-            test_xy_bach = matData2pLaplace.get_data2pLaplace(equation_name=R['equa_name'], mesh_number=mesh_number)
+            test_xy_bach = Load_data2Mat.get_data2pLaplace(equation_name=R['equa_name'], mesh_number=mesh_number)
             size2batch = np.shape(test_xy_bach)[0]
             size2test = int(np.sqrt(size2batch))
             saveData.save_meshData2mat(test_xy_bach, dataName='meshXY', mesh_number=mesh_number, outPath=R['FolderName'])
@@ -568,7 +566,7 @@ def solve_Multiscale_PDE(R):
                 name2data_file = '11'
             else:
                 name2data_file = '01'
-            test_xy_bach = matData2Boltzmann.get_meshData2Boltzmann(domain_lr=name2data_file, mesh_number=mesh_number)
+            test_xy_bach = Load_data2Mat.get_meshData2Boltzmann(domain_lr=name2data_file, mesh_number=mesh_number)
             size2batch = np.shape(test_xy_bach)[0]
             size2test = int(np.sqrt(size2batch))
             saveData.save_meshData2mat(test_xy_bach, dataName='meshXY', mesh_number=mesh_number,
@@ -578,13 +576,13 @@ def solve_Multiscale_PDE(R):
                 name2data_file = '11'
             else:
                 name2data_file = '01'
-            test_xy_bach = matData2Boltzmann.get_meshData2Boltzmann(domain_lr=name2data_file, mesh_number=mesh_number)
+            test_xy_bach = Load_data2Mat.get_meshData2Boltzmann(domain_lr=name2data_file, mesh_number=mesh_number)
             size2batch = np.shape(test_xy_bach)[0]
             size2test = int(np.sqrt(size2batch))
             saveData.save_meshData2mat(test_xy_bach, dataName='meshXY', mesh_number=mesh_number,
                                        outPath=R['FolderName'])
         else:
-            test_xy_bach = matData2Laplace.get_randData2Laplace(dim=input_dim, data_path='dataMat_highDim')
+            test_xy_bach = Load_data2Mat.get_randomData2mat(dim=input_dim, data_path='dataMat_highDim')
             size2batch = np.shape(test_xy_bach)[0]
             size2test = int(np.sqrt(size2batch))
 

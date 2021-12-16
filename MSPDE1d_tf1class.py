@@ -19,9 +19,6 @@ import random2pLaplace
 import MS_BoltzmannEqs
 import MS_ConvectionEqs
 
-import matData2Laplace
-import matData2pLaplace
-import matData2Boltzmann
 import saveData
 import plotData
 import DNN_Log_Print
@@ -41,7 +38,7 @@ class MscaleDNN(object):
                 indim=input_dim, outdim=out_dim, hidden_units=hidden_layer, name2Model=Model_name, actName2in=name2actIn,
                 actName=name2actHidden, actName2out=name2actOut, type2float=type2numeric)
         elif 'FOURIER_DNN' == str.upper(Model_name):
-            self.DNN = DNN_Class_base.Dense_Fourier_Net(
+            self.DNN = DNN_Class_base.Dense_FourierNet(
                 indim=input_dim, outdim=out_dim, hidden_units=hidden_layer, name2Model=Model_name, actName2in=name2actIn,
                 actName=name2actHidden, actName2out=name2actOut, type2float=type2numeric)
 
@@ -475,8 +472,8 @@ if __name__ == "__main__":
         # R['equa_name'] = 'PDE7'
     elif store_file == 'pLaplace1D':
         R['PDE_type'] = 'pLaplace'
-        # R['equa_name'] = 'multi_scale'
-        R['equa_name'] = '3scale2'
+        R['equa_name'] = 'multi_scale'
+        # R['equa_name'] = '3scale2'
         # R['equa_name'] = 'rand_ceof'
         # R['equa_name'] = 'rand_sin_ceof'
     elif store_file == 'Boltzmann1D':
@@ -538,10 +535,10 @@ if __name__ == "__main__":
     R['init_boundary_penalty'] = 100  # Regularization parameter for boundary conditions
 
     # 网络的频率范围设置
-    # R['freq'] = np.arange(1, 121)
+    R['freq'] = np.arange(1, 121)
 
-    R['freq'] = np.concatenate((np.random.normal(0, 1, 30), np.random.normal(0, 20, 30),
-                                np.random.normal(0, 50, 30), np.random.normal(0, 120, 30)), axis=0)
+    # R['freq'] = np.concatenate((np.random.normal(0, 1, 30), np.random.normal(0, 20, 30),
+    #                             np.random.normal(0, 50, 30), np.random.normal(0, 120, 30)), axis=0)
 
     # &&&&&&&&&&&&&&&&&&& 使用的网络模型 &&&&&&&&&&&&&&&&&&&&&&&&&&&
     # R['model2NN'] = 'DNN'
@@ -599,12 +596,13 @@ if __name__ == "__main__":
             R['hidden_layers'] = (350, 300, 200, 200, 100)
 
     # &&&&&&&&&&&&&&&&&&& 激活函数的选择 &&&&&&&&&&&&&&&&&&&&&&&&&&&&&
-    R['name2act_in'] = 'tanh'
+    # R['name2act_in'] = 'tanh'
+    R['name2act_in'] = 's2relu'
 
     # R['name2act_hidden'] = 'relu'
-    R['name2act_hidden'] = 'tanh'
+    # R['name2act_hidden'] = 'tanh'
     # R['name2act_hidden'] = 'srelu'
-    # R['name2act_hidden'] = 's2relu'
+    R['name2act_hidden'] = 's2relu'
     # R['name2act_hidden'] = 'sinADDcos'
     # R['name2act_hidden'] = 'elu'
     # R['name2act_hidden'] = 'phi'

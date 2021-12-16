@@ -15,7 +15,7 @@ import DNN_tools
 import DNN_data
 import MS_LaplaceEqs
 import General_Laplace
-import matData2HighDim
+import Load_data2Mat
 import saveData
 import plotData
 import DNN_Log_Print
@@ -35,7 +35,7 @@ class MscaleDNN(object):
                 indim=input_dim, outdim=out_dim, hidden_units=hidden_layer, name2Model=Model_name, actName2in=name2actIn,
                 actName=name2actHidden, actName2out=name2actOut, type2float=type2numeric)
         elif 'FOURIER_DNN' == str.upper(Model_name) or 'DNN_FOURIERBASE' == str.upper(Model_name):
-            self.DNN = DNN_Class_base.Dense_Fourier_Net(
+            self.DNN = DNN_Class_base.Dense_FourierNet(
                 indim=input_dim, outdim=out_dim, hidden_units=hidden_layer, name2Model=Model_name, actName2in=name2actIn,
                 actName=name2actHidden, actName2out=name2actOut, type2float=type2numeric)
 
@@ -341,7 +341,7 @@ def solve_Multiscale_PDE(R):
         test_bach_size = 1600
         size2test = 40
         mat_data_path = 'dataMat_highDim'
-        test_xyzs_bach = matData2HighDim.get_data2Biharmonic(dim=input_dim, data_path=mat_data_path)
+        test_xyzs_bach = Load_data2Mat.get_randomData2mat(dim=input_dim, data_path=mat_data_path)
         saveData.save_testData_or_solus2mat(test_xyzs_bach, dataName='testXYZS', outPath=R['FolderName'])
 
     # ConfigProto 加上allow_soft_placement=True就可以使用 gpu 了
