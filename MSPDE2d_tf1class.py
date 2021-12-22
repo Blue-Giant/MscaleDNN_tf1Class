@@ -70,7 +70,7 @@ class MscaleDNN(object):
             force_side = fside
 
         UNN = self.DNN(XY, scale=self.factor2freq, sFourier=self.sFourier)
-        dUNN = tf.gradients(UNN, XY)[0]  # * 行 2 列
+        dUNN = tf.gradients(UNN, XY)[0]                                       # * 行 2 列
 
         if str.lower(loss_type) == 'ritz_loss' or str.lower(loss_type) == 'variational_loss':
             dUNN_Norm = tf.reshape(tf.sqrt(tf.reduce_sum(tf.square(dUNN), axis=-1)), shape=[-1, 1])  # 按行求和
@@ -171,8 +171,8 @@ class MscaleDNN(object):
         lenght2XY_shape = len(shape2XY)
         assert (lenght2XY_shape == 2)
         assert (shape2XY[-1] == 2)
-        X_bd = np.reshape(XY_bd[:, 0], newshape=[-1, 1])
-        Y_bd = np.reshape(XY_bd[:, 1], newshape=[-1, 1])
+        X_bd = tf.reshape(XY_bd[:, 0], shape=[-1, 1])
+        Y_bd = tf.reshape(XY_bd[:, 1], shape=[-1, 1])
 
         if if_lambda2Ubd:
             Ubd = Ubd_exact(X_bd, Y_bd)
@@ -311,7 +311,7 @@ def solve_Multiscale_PDE(R):
 
             loss = loss_it + boundary_penalty * loss_bd + PWB                     # 要优化的loss function
 
-            my_optimizer = tf.train.AdamOptimizer(in_learning_rate)
+            my_optimizer = tf.compat.v1.train.AdamOptimizer(in_learning_rate)
             if R['train_model'] == 'group3_training':
                 train_op1 = my_optimizer.minimize(loss_it, global_step=global_steps)
                 train_op2 = my_optimizer.minimize(loss_bd, global_step=global_steps)
@@ -613,10 +613,8 @@ if __name__ == "__main__":
     R['testData_model'] = 'loadData'
     # R['testData_model'] = 'random_generate'
 
-    # R['loss_type'] = 'L2_loss'                             # loss类型:L2 loss
-    R['loss_type'] = 'variational_loss'                      # loss类型:PDE变分
-    # R['loss_type'] = 'lncosh_loss2Ritz'
-    R['lambda2lncosh'] = 50.0
+    # R['loss_type'] = 'L2_loss'                          # loss类型:L2 loss
+    R['loss_type'] = 'variational_loss'                   # loss类型:PDE变分
 
     R['optimizer_name'] = 'Adam'                          # 优化器
     R['learning_rate'] = 2e-4                             # 学习率
@@ -635,12 +633,12 @@ if __name__ == "__main__":
 
     # 边界的惩罚处理方式,以及边界的惩罚因子
     R['activate_penalty2bd_increase'] = 1
-    # R['init_boundary_penalty'] = 1000                     # Regularization parameter for boundary conditions
-    R['init_boundary_penalty'] = 100                     # Regularization parameter for boundary conditions
+    # R['init_boundary_penalty'] = 1000                   # Regularization parameter for boundary conditions
+    R['init_boundary_penalty'] = 100                      # Regularization parameter for boundary conditions
 
     # 网络的频率范围设置
-    # R['freq'] = np.concatenate(([1], np.arange(1, 100 - 1)), axis=0)
-    R['freq'] = np.random.normal(0, 100, 100)
+    R['freq'] = np.arange(1, 121)
+    # R['freq'] = np.random.normal(1, 120, 100)
 
     # &&&&&&&&&&&&&&&&&&& 使用的网络模型 &&&&&&&&&&&&&&&&&&&&&&&&&&&
     # R['model2NN'] = 'DNN'
@@ -660,14 +658,16 @@ if __name__ == "__main__":
         # R['hidden_layers'] = (500, 400, 300, 300, 200, 100)
 
     # &&&&&&&&&&&&&&&&&&& 激活函数的选择 &&&&&&&&&&&&&&&&&&&&&&&&&&&&&
-    R['name2act_in'] = 'relu'
+    # R['name2act_in'] = 'relu'
+    # R['name2act_in'] = 'tanh'
+    # R['name2act_in'] = 'srelu'
+    R['name2act_in'] = 's2relu'
 
     # R['name2act_hidden'] = 'relu'
-    R['name2act_hidden'] = 'tanh'
+    # R['name2act_hidden'] = 'tanh'
     # R['name2act_hidden']' = leaky_relu'
     # R['name2act_hidden'] = 'srelu'
-    # R['name2act_hidden'] = 's2relu'
-    # R['name2act_hidden'] = 'scsrelu'
+    R['name2act_hidden'] = 's2relu'
     # R['name2act_hidden'] = 'sin'
     # R['name2act_hidden'] = 'sinAddcos'
     # R['name2act_hidden'] = 'elu'
@@ -688,9 +688,6 @@ if __name__ == "__main__":
     elif R['model2NN'] == 'Fourier_DNN' and R['name2act_hidden'] == 'sin':
         # R['sfourier'] = 0.5
         R['sfourier'] = 1.0
-    elif R['model2NN'] == 'Fourier_DNN' and R['name2act_hidden'] == 'scsrelu':
-        R['sfourier'] = 0.5
-        # R['sfourier'] = 1.0
     else:
         # R['sfourier'] = 1.0
         # R['sfourier'] = 5.0
