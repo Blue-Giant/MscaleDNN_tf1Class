@@ -193,6 +193,59 @@ class np_GaussianNormalizer(object):
         x = (x * (self.std2x * self.std2x + self.eps)) + self.mean2x
         return x
 
+    def get_mean(self):
+        return self.mean2x
+
+    def get_std(self):
+        return self.std2x
+
+
+# normalization, pointwise gaussian
+class UnitGaussianNormalizer(object):
+    def __init__(self, x, eps=0.00001):
+        super(UnitGaussianNormalizer, self).__init__()
+
+        # x could be in shape of ntrain*n or ntrain*T*n or ntrain*n*T
+        shape2x = np.shape(x)
+        if len(shape2x) == 3:  # [B, N, D]
+            self.mean = np.mean(x, axis=1, keepdims=True)
+            self.std = np.std(x, axis=1, keepdims=True)
+        elif len(shape2x) == 2:  # [N, D]
+            self.mean = np.mean(x, axis=-1, keepdims=True)
+            self.std = np.std(x, axis=-1, keepdims=True)
+        self.eps = eps
+
+    def encode(self, x):
+        # temp = x - self.mean
+        x = (x - self.mean) / (self.std + self.eps)
+        return x
+
+    def decode(self, x, sample_idx=None):
+        if sample_idx is None:
+            std = self.std + self.eps  # n
+            mean = self.mean
+        else:
+            if len(self.mean.shape) == len(sample_idx[0].shape):
+                std = self.std[sample_idx] + self.eps  # batch*n
+                mean = self.mean[sample_idx]
+            if len(self.mean.shape) > len(sample_idx[0].shape):
+                std = self.std[:, sample_idx]+ self.eps # T*batch*n
+                mean = self.mean[:, sample_idx]
+
+        # x is in shape of batch*n or T*batch*n
+        x = (x * std) + mean
+        return x
+
+    def get_mean(self):
+        return self.mean
+
+    def get_std(self):
+        return self.std
+
+    def decode_men_std(self, data=None, mean2data=None, std2data=None):
+        data = data*(std2data + self.eps) + mean2data
+        return data
+
 
 # ---------------------------------------------- my activations -----------------------------------------------
 class my_actFunc(object):
@@ -223,9 +276,16 @@ class my_actFunc(object):
             out_x = tf.nn.softplus(x_input)
         elif str.lower(self.actName) == 'mish':
             out_x = x_input*tf.tanh(tf.math.log(1+tf.exp(x_input)))
+        elif str.lower(self.actName) == 'fourier':
+            out_x = tf.concat([tf.sin(x), tf.cos(x)], axis=-1)
         elif str.lower(self.actName) == 'gelu':
             temp2x = np.sqrt(2 / np.pi) * (x_input + 0.044715 * x_input * x_input * x_input)
-            out_x = 0.5 * + 0.5 * x_input * tf.tanh(temp2x)
+            # out_x = 0.5 * x_input + 0.5 * x_input * tf.tanh(temp2x) # 原来的gelu输出
+            # out_x = 0.5 * + 0.5 * x_input * tf.tanh(temp2x)         # 我写错的gelu输出
+            out_x = 0.25 * x_input * tf.tanh(temp2x)                  # 我的Gelu 输出(误打误撞，得到一个好的激活函数, 效果最好)
+            # out_x = 0.25 * x_input * tf.tanh(temp2x) + 0.25
+            # out_x = 0.5*x_input * tf.tanh(temp2x)
+            # out_x = x_input * tf.tanh(temp2x)
         else:
             out_x = x_input
         return out_x
@@ -266,7 +326,7 @@ class my_actFunc(object):
         return x * tf.exp(-0.075*x * x)
         # return -1.25*x*tf.exp(-0.25*x*x)
 
-    def sm_mexican(x):
+    def sm_mexican(self, x):
         # return tf.sin(np.pi*x) * x * tf.exp(-0.075*x * x)
         # return tf.sin(np.pi*x) * x * tf.exp(-0.125*x * x)
         return 2.0*tf.sin(np.pi*x) * x * tf.exp(-0.5*x * x)
@@ -306,6 +366,186 @@ class my_actFunc(object):
     def phi(self, x):
         return tf.nn.relu(x) * tf.nn.relu(x)-3*tf.nn.relu(x-1)*tf.nn.relu(x-1) + 3*tf.nn.relu(x-2)*tf.nn.relu(x-2) \
                - tf.nn.relu(x-3)*tf.nn.relu(x-3)*tf.nn.relu(x-3)
+
+
+# This class of Dense_Net is an union for the normal-DNN, Scale-DNN and Fourier-DNN
+class DenseNet(object):
+    """
+    Args:
+        indim: the dimension for input data
+        outdim: the dimension for output
+        hidden_units: the number of  units for hidden layer, a list or a tuple
+        name2Model: the name of using DNN type, DNN , ScaleDNN or FourierDNN
+        actName2in: the name of activation function for input layer
+        actName: the name of activation function for hidden layer
+        actName2out: the name of activation function for output layer
+        scope2W: the namespace of weight
+        scope2B: the namespace of bias
+        repeat_high_freq: repeating the high-frequency component of scale-transformation factor or not
+        if name2Model is not wavelet NN, actName2in is not same as actName; otherwise, actName2in is same as actName
+    """
+    def __init__(self, indim=1, outdim=1, hidden_units=None, name2Model='DNN', actName2in='tanh', actName='tanh',
+                 actName2out='linear', scope2W='Weight', scope2B='Bias', repeat_high_freq=True, type2float='float32',
+                 varcoe=0.5):
+        super(DenseNet, self).__init__()
+        self.indim = indim
+        self.outdim = outdim
+        self.hidden_units = hidden_units
+        self.name2Model = name2Model
+        self.actName2in = actName2in
+        self.actName = actName
+        self.actName2out = actName2out
+        self.actFunc_in = my_actFunc(actName=actName2in)
+        self.actFunc = my_actFunc(actName=actName)
+        self.actFunc_out = my_actFunc(actName=actName2out)
+        self.repeat_high_freq = repeat_high_freq
+        self.type2float = type2float
+
+        if type2float == 'float32':
+            self.float_type = tf.float32
+        elif type2float == 'float64':
+            self.float_type = tf.float64
+        else:
+            self.float_type = tf.float16
+
+        self.Ws = []
+        self.Bs = []
+        with tf.compat.v1.variable_scope('WB_scope', reuse=tf.compat.v1.AUTO_REUSE):
+            if str.lower(self.name2Model) == 'fourier_dnn':
+                stddev_WB = (2.0 / (indim + hidden_units[0])) ** varcoe
+                Win = tf.compat.v1.get_variable(
+                    name=str(scope2W) + '_in', shape=(indim, hidden_units[0]),
+                    initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True, dtype=self.float_type)
+                Bin = tf.compat.v1.get_variable(
+                    name=str(scope2B) + '_in', shape=(hidden_units[0],),
+                    initializer=tf.random_normal_initializer(stddev=stddev_WB), dtype=self.float_type, trainable=False)
+                self.Ws.append(Win)
+                self.Bs.append(Bin)
+                for i_layer in range(len(hidden_units)-1):
+                    stddev_WB = (2.0 / (hidden_units[i_layer] + hidden_units[i_layer + 1])) ** varcoe
+                    if i_layer == 0:
+                        W = tf.compat.v1.get_variable(
+                            name=str(scope2W)+str(i_layer), shape=(hidden_units[i_layer]*2, hidden_units[i_layer + 1]),
+                            initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True,
+                            dtype=self.float_type)
+                        B = tf.compat.v1.get_variable(
+                            name=str(scope2B) + str(i_layer), shape=(hidden_units[i_layer + 1],),
+                            initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True,
+                            dtype=self.float_type)
+                    else:
+                        W = tf.compat.v1.get_variable(
+                            name=str(scope2W) + str(i_layer), shape=(hidden_units[i_layer], hidden_units[i_layer + 1]),
+                            initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True,
+                            dtype=self.float_type)
+                        B = tf.compat.v1.get_variable(
+                            name=str(scope2B) + str(i_layer), shape=(hidden_units[i_layer + 1],),
+                            initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True,
+                            dtype=self.float_type)
+                    self.Ws.append(W)
+                    self.Bs.append(B)
+            else:
+                stddev_WB = (2.0 / (indim + hidden_units[0])) ** varcoe
+                Win = tf.compat.v1.get_variable(
+                    name=str(scope2W) + '_in', shape=(indim, hidden_units[0]),
+                    initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True, dtype=self.float_type)
+                Bin = tf.compat.v1.get_variable(
+                    name=str(scope2B) + '_in', shape=(hidden_units[0],),
+                    initializer=tf.random_normal_initializer(stddev=stddev_WB), dtype=self.float_type, trainable=True)
+                self.Ws.append(Win)
+                self.Bs.append(Bin)
+                for i_layer in range(len(hidden_units) - 1):
+                    stddev_WB = (2.0 / (hidden_units[i_layer] + hidden_units[i_layer + 1])) ** 0.5
+                    W = tf.compat.v1.get_variable(
+                        name=str(scope2W) + str(i_layer), shape=(hidden_units[i_layer], hidden_units[i_layer + 1]),
+                        initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True,
+                        dtype=self.float_type)
+                    B = tf.compat.v1.get_variable(
+                        name=str(scope2B) + str(i_layer), shape=(hidden_units[i_layer + 1],),
+                        initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True,
+                        dtype=self.float_type)
+                    self.Ws.append(W)
+                    self.Bs.append(B)
+
+            # 输出层：最后一层的权重和偏置。将最后的结果变换到输出维度
+            stddev_WB = (2.0 / (hidden_units[-1] + outdim)) ** varcoe
+            Wout = tf.compat.v1.get_variable(
+                name=str(scope2W) + '_out', shape=(hidden_units[-1], outdim),
+                initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True, dtype=self.float_type)
+            Bout = tf.compat.v1.get_variable(
+                name=str(scope2B) + '_out', shape=(outdim,), initializer=tf.random_normal_initializer(stddev=stddev_WB),
+                trainable=True, dtype=self.float_type)
+
+            self.Ws.append(Wout)
+            self.Bs.append(Bout)
+
+    def get_regular_sum2WB(self, regular_model):
+        layers = len(self.hidden_units)+1
+        if regular_model == 'L1':
+            regular_w = 0
+            regular_b = 0
+            for i_layer in range(layers):
+                regular_w = regular_w + tf.reduce_sum(tf.abs(self.Ws[i_layer]), keepdims=False)
+                regular_b = regular_b + tf.reduce_sum(tf.abs(self.Bs[i_layer]), keepdims=False)
+        elif regular_model == 'L2':
+            regular_w = 0
+            regular_b = 0
+            for i_layer in range(layers):
+                regular_w = regular_w + tf.reduce_sum(tf.square(self.Ws[i_layer]), keepdims=False)
+                regular_b = regular_b + tf.reduce_sum(tf.square(self.Bs[i_layer]), keepdims=False)
+        else:
+            regular_w = tf.constant(0.0)
+            regular_b = tf.constant(0.0)
+        return regular_w + regular_b
+
+    def __call__(self, inputs, scale=None, sFourier=0.5):
+        """
+        Args
+            inputs: the input point set [num, in-dim]
+            scale: The scale-factor to transform the input-data
+        return
+            output: the output point set [num, out-dim]
+        """
+        # ------ dealing with the input data ---------------
+        H = tf.add(tf.matmul(inputs, self.Ws[0]), self.Bs[0])
+        if str.lower(self.name2Model) == 'dnn':  # name2Model:DNN
+            H = self.actFunc_in(H)
+        else:
+            assert (len(scale) != 0)
+            repeat_num = int(self.hidden_units[0] / len(scale))
+            repeat_scale = np.repeat(scale, repeat_num)
+
+            if self.repeat_high_freq:
+                repeat_scale = np.concatenate(
+                    (repeat_scale, np.ones([self.hidden_units[0] - repeat_num * len(scale)]) * scale[-1]))
+            else:
+                repeat_scale = np.concatenate(
+                    (np.ones([self.hidden_units[0] - repeat_num * len(scale)]) * scale[0], repeat_scale))
+
+            if self.type2float == 'float32':
+                repeat_scale = repeat_scale.astype(np.float32)
+            elif self.type2float == 'float64':
+                repeat_scale = repeat_scale.astype(np.float64)
+            else:
+                repeat_scale = repeat_scale.astype(np.float16)
+
+            if str.lower(self.name2Model) == 'fourier_dnn':
+                H = sFourier * self.actFunc_in(H * repeat_scale)
+            else:
+                H = self.actFunc_in(H * repeat_scale)
+
+        #  ---resnet(one-step skip connection for two consecutive layers if have equal neurons）---
+        hidden_record = self.hidden_units[0]
+        for i_layer in range(len(self.hidden_units) - 1):
+            H_pre = H
+            H = tf.add(tf.matmul(H, self.Ws[i_layer + 1]), self.Bs[i_layer + 1])
+            H = self.actFunc(H)
+            if self.hidden_units[i_layer + 1] == hidden_record:
+                H = H + H_pre
+            hidden_record = self.hidden_units[i_layer + 1]
+
+        H = tf.add(tf.matmul(H, self.Ws[-1]), self.Bs[-1])
+        out_result = self.actFunc_out(H)
+        return out_result
 
 
 # This class of Dense_Net is an union for the normal-DNN, Scale-DNN and Fourier-DNN, but it have some problems.
@@ -905,255 +1145,6 @@ class Dense_FourierNet(object):
             H = tf.add(tf.matmul(H, self.Ws[i_layer + 1]), self.Bs[i_layer + 1])
             H = self.actFunc(H)
             if self.hidden_units[i_layer + 1] == hidden_record and i_layer != 0:
-                H = H + H_pre
-            hidden_record = self.hidden_units[i_layer + 1]
-
-        H = tf.add(tf.matmul(H, self.Ws[-1]), self.Bs[-1])
-        out_result = self.actFunc_out(H)
-        return out_result
-
-
-class Dense_RBFNet(object):
-    """
-    Args:
-        indim: the dimension for input data
-        outdim: the dimension for output
-        hidden_units: the number of  units for hidden layer, a list or a tuple
-        name2Model: the name of using DNN type, DNN , ScaleDNN or FourierDNN
-        actName2in: the name of activation function for input layer
-        actName: the name of activation function for hidden layer
-        actName2out: the name of activation function for output layer
-        scope2W: the namespace of weight
-        scope2B: the namespace of bias
-        repeat_high_freq: repeating the high-frequency component of scale-transformation factor or not
-        if name2Model is not wavelet NN, actName2in is not same as actName; otherwise, actName2in is same as actName
-    """
-    def __init__(self, indim=1, outdim=1, hidden_units=None, name2Model='DNN', actName2in='tanh', actName='tanh',
-                 actName2out='linear', scope2W='Weight', scope2B='Bias', repeat_high_freq=True, type2float='float32',
-                 varcoe=0.5, opt2init_B2RBF='uniform_random', opt2init_W2RBF='uniform_random', train_W2RBF=True,
-                 train_B2RBF=True, left_value=0.0, right_value=1.0, shuffle_W2RBF=True, shuffle_B2RBF=True,
-                 value_max2weight=1.0):
-        super(Dense_RBFNet, self).__init__()
-        self.indim = indim
-        self.outdim = outdim
-        self.hidden_units = hidden_units
-        self.name2Model = name2Model
-        self.actName2in = actName2in
-        self.actName = actName
-        self.actName2out = actName2out
-        self.actFunc_in = my_actFunc(actName=actName2in)
-        self.actFunc = my_actFunc(actName=actName)
-        self.actFunc_out = my_actFunc(actName=actName2out)
-        self.repeat_high_freq = repeat_high_freq
-        self.type2float = type2float
-        self.Ws = []
-        self.Bs = []
-        if type2float == 'float32':
-            self.float_type = tf.float32
-        elif type2float == 'float64':
-            self.float_type = tf.float64
-        else:
-            self.float_type = tf.float16
-
-        with tf.compat.v1.variable_scope('WB_scope', reuse=tf.compat.v1.AUTO_REUSE):
-            stddev_WB = (2.0 / (indim + hidden_units[0])) ** varcoe
-            if opt2init_W2RBF == 'uniform_random':
-                W2RBF = tf.compat.v1.get_variable(
-                    name='W2RBF', initializer=tf.random.uniform([1, hidden_units[0]],maxval=value_max2weight),
-                    dtype=tf.float32, trainable=train_W2RBF)
-                if shuffle_W2RBF:
-                    W2RBF = tf.random_shuffle(W2RBF)  # 如果对 W2RBF求导，random_shuffle没有梯度定义
-            else:
-                W2RBF = tf.compat.v1.get_variable(
-                    name='W2RBF', shape=(1, hidden_units[0]), initializer=tf.random_normal_initializer(stddev=stddev_WB),
-                    dtype=tf.float32, trainable=train_W2RBF)
-            if opt2init_B2RBF == 'uniform_random':
-                B2RBF = tf.compat.v1.get_variable(
-                    name='B2RBF', initializer=tf.random.uniform([indim, hidden_units[0]], minval=left_value,
-                                                                maxval=right_value),
-                    dtype=tf.float32, trainable=train_B2RBF)
-                if shuffle_B2RBF:
-                    B2RBF = tf.random_shuffle(B2RBF)
-            else:
-                B2RBF = tf.compat.v1.get_variable(name='B2RBF', shape=(indim, hidden_units[0]),
-                                                  initializer=tf.random_normal_initializer(stddev=stddev_WB),
-                                                  dtype=tf.float32, trainable=train_B2RBF)
-            self.Ws.append(W2RBF)
-            self.Bs.append(B2RBF)
-            for i_layer in range(len(hidden_units) - 1):
-                stddev_WB = (2.0 / (hidden_units[i_layer] + hidden_units[i_layer + 1])) ** varcoe
-                W = tf.compat.v1.get_variable(
-                    name=str(scope2W) + str(i_layer), shape=(hidden_units[i_layer], hidden_units[i_layer + 1]),
-                    initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True, dtype=self.float_type)
-                B = tf.compat.v1.get_variable(
-                    name=str(scope2B) + str(i_layer), shape=(hidden_units[i_layer + 1],),
-                    initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True, dtype=self.float_type)
-                self.Ws.append(W)
-                self.Bs.append(B)
-
-            # 输出层：最后一层的权重和偏置。将最后的结果变换到输出维度
-            stddev_WB = (2.0 / (hidden_units[-1] + outdim)) ** varcoe
-            Wout = tf.compat.v1.get_variable(
-                name=str(scope2W) + '_out', shape=(hidden_units[-1], outdim),
-                initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True, dtype=self.float_type)
-            Bout = tf.compat.v1.get_variable(
-                name=str(scope2B) + '_out', shape=(outdim,), initializer=tf.random_normal_initializer(stddev=stddev_WB),
-                trainable=True, dtype=self.float_type)
-
-            self.Ws.append(Wout)
-            self.Bs.append(Bout)
-
-    def get_regular_sum2WB(self, regular_model):
-        layers = len(self.hidden_units)+1
-        if regular_model == 'L1':
-            regular_w = 0
-            regular_b = 0
-            for i_layer in range(layers):
-                regular_w = regular_w + tf.reduce_sum(tf.abs(self.Ws[i_layer]), keepdims=False)
-                regular_b = regular_b + tf.reduce_sum(tf.abs(self.Bs[i_layer]), keepdims=False)
-        elif regular_model == 'L2':
-            regular_w = 0
-            regular_b = 0
-            for i_layer in range(layers):
-                regular_w = regular_w + tf.reduce_sum(tf.square(self.Ws[i_layer]), keepdims=False)
-                regular_b = regular_b + tf.reduce_sum(tf.square(self.Bs[i_layer]), keepdims=False)
-        else:
-            regular_w = tf.constant(0.0)
-            regular_b = tf.constant(0.0)
-        return regular_w + regular_b
-
-    def __call__(self, inputs, scale=None, sRBF=1.0):
-        """
-        Args
-            inputs: the input point set [num, in-dim]
-            scale: The scale-factor to transform the input-data
-        return
-            output: the output point set [num, out-dim]
-        """
-        # ------ dealing with the input data ---------------
-        assert (len(scale) != 0)
-        repeat_num = int(self.hidden_units[0] / len(scale))
-        repeat_scale = np.repeat(scale, repeat_num)
-
-        if self.repeat_high_freq:
-            repeat_scale = np.concatenate(
-                (repeat_scale, np.ones([self.hidden_units[0] - repeat_num * len(scale)]) * scale[-1]))
-        else:
-            repeat_scale = np.concatenate(
-                (np.ones([self.hidden_units[0] - repeat_num * len(scale)]) * scale[0], repeat_scale))
-
-        if self.type2float == 'float32':
-            repeat_scale = repeat_scale.astype(np.float32)
-        elif self.type2float == 'float64':
-            repeat_scale = repeat_scale.astype(np.float64)
-        else:
-            repeat_scale = repeat_scale.astype(np.float16)
-
-        if 2 == self.indim:
-            X_vec1 = np.array([[1.0], [0.0]], dtype=np.float32)
-            X_vec2 = np.array([[0.0], [1.0]], dtype=np.float32)
-
-            B_vec1 = np.array([[1.0, 0.0]], dtype=np.float32)
-            B_vec2 = np.array([[0.0, 1.0]], dtype=np.float32)
-        elif 3 == self.indim:
-            X_vec1 = np.array([[1.0], [0.0], [0.0]], dtype=np.float32)
-            X_vec2 = np.array([[0.0], [1.0], [0.0]], dtype=np.float32)
-            X_vec3 = np.array([[0.0], [0.0], [1.0]], dtype=np.float32)
-
-            B_vec1 = np.array([[1.0, 0.0, 0.0]], dtype=np.float32)
-            B_vec2 = np.array([[0.0, 1.0, 0.0]], dtype=np.float32)
-            B_vec3 = np.array([[0.0, 0.0, 1.0]], dtype=np.float32)
-        elif 4 == self.indim:
-            X_vec1 = np.array([[1.0], [0.0], [0.0], [0.0]], dtype=np.float32)
-            X_vec2 = np.array([[0.0], [1.0], [0.0], [0.0]], dtype=np.float32)
-            X_vec3 = np.array([[0.0], [0.0], [1.0], [0.0]], dtype=np.float32)
-            X_vec4 = np.array([[0.0], [0.0], [0.0], [0.0]], dtype=np.float32)
-
-            B_vec1 = np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32)
-            B_vec2 = np.array([[0.0, 1.0, 0.0, 0.0]], dtype=np.float32)
-            B_vec3 = np.array([[0.0, 0.0, 1.0, 0.0]], dtype=np.float32)
-            B_vec4 = np.array([[0.0, 0.0, 0.0, 1.0]], dtype=np.float32)
-
-        B2RBF = self.Bs[0]
-        W2RBF = self.Ws[0]
-        if 1 == self.indim:
-            diff2X = inputs - B2RBF
-            norm2diffx = tf.square(diff2X)
-        elif 2 == self.indim:
-            X1 = tf.matmul(inputs, X_vec1)
-            X2 = tf.matmul(inputs, X_vec2)
-            B1 = tf.matmul(B_vec1, B2RBF)
-            B2 = tf.matmul(B_vec2, B2RBF)
-            diff_X1 = X1 - B1
-            diff_X2 = X2 - B2
-            square_diff_X1 = tf.square(diff_X1)
-            square_diff_X2 = tf.square(diff_X2)
-            norm2diffx = square_diff_X1 + square_diff_X2
-        elif 3 == self.indim:
-            X1 = tf.matmul(inputs, X_vec1)
-            X2 = tf.matmul(inputs, X_vec2)
-            X3 = tf.matmul(inputs, X_vec3)
-
-            B1 = tf.matmul(B_vec1, B2RBF)
-            B2 = tf.matmul(B_vec2, B2RBF)
-            B3 = tf.matmul(B_vec3, B2RBF)
-
-            diff_X1 = X1 - B1
-            diff_X2 = X2 - B2
-            diff_X3 = X3 - B3
-            square_diff_X1 = tf.square(diff_X1)
-            square_diff_X2 = tf.square(diff_X2)
-            square_diff_X3 = tf.square(diff_X3)
-            norm2diffx = square_diff_X1 + square_diff_X2 + square_diff_X3
-        elif 4 == self.indim:
-            X1 = tf.matmul(inputs, X_vec1)
-            X2 = tf.matmul(inputs, X_vec2)
-            X3 = tf.matmul(inputs, X_vec3)
-            X4 = tf.matmul(inputs, X_vec4)
-
-            B1 = tf.matmul(B_vec1, B2RBF)
-            B2 = tf.matmul(B_vec2, B2RBF)
-            B3 = tf.matmul(B_vec3, B2RBF)
-            B4 = tf.matmul(B_vec4, B2RBF)
-
-            diff_X1 = X1 - B1
-            diff_X2 = X2 - B2
-            diff_X3 = X3 - B3
-            diff_X4 = X4 - B4
-            square_diff_X1 = tf.square(diff_X1)
-            square_diff_X2 = tf.square(diff_X2)
-            square_diff_X3 = tf.square(diff_X3)
-            square_diff_X4 = tf.square(diff_X4)
-            norm2diffx = square_diff_X1 + square_diff_X2 + square_diff_X3 + square_diff_X4  # (?, N)
-        weight_norm2diff_X = tf.multiply(norm2diffx, W2RBF)
-
-        if len(scale) == 1:
-            # H = tf.sin(weight_norm2diff_X)
-            H = tf.exp(-0.5 * weight_norm2diff_X)
-            # H = tf.exp(-0.5 * weight_norm2diff_X) * sfactor * tf.cos(1.75 * norm2diffx)
-            # H = tf.exp(-0.5 * weight_norm2diff_X) * sfactor * tf.cos(1.75 * weight_norm2diff_X)
-            # H = tf.exp(-0.5 *weight_norm2diff_X) * sfactor*(tf.cos(1.75 * weight_norm2diff_X) + tf.sin(1.75 * weight_norm2diff_X))
-        else:
-            # H = tf.sin(weight_norm2diff_X * mixcoe)
-            # H = tf.exp(-0.5 * weight_norm2diff_X * mixcoe)
-            # H = tf.exp(-0.5 * weight_norm2diff_X * mixcoe) * sRBF * tf.cos(1.75 * norm2diffx)
-            H = tf.exp(-0.5 * weight_norm2diff_X * repeat_scale) * sRBF * tf.sin(norm2diffx * repeat_scale)
-            # H = tf.exp(-0.5 * weight_norm2diff_X * mixcoe) * sRBF * tf.sin(weight_norm2diff_X * mixcoe)
-            # H = tf.exp(-0.5 * weight_norm2diff_X * mixcoe) * sRBF * tf.sin(np.pi * norm2diffx * mixcoe)  # work 不好
-            # H = tf.exp(-0.5 * weight_norm2diff_X * mixcoe) * sRBF * tf.cos(1.75 * norm2diffx * mixcoe)
-            # H = tf.exp(-0.5 * weight_norm2diff_X * mixcoe) * sRBF * 0.5 * (tf.cos(norm2diffx * mixcoe) + tf.sin(norm2diffx * mixcoe))
-            # H = tf.exp(-0.5 * weight_norm2diff_X * mixcoe) * sRBF * 0.5*(tf.cos(1.75 * norm2diffx * mixcoe) + tf.sin(1.75 * norm2diffx * mixcoe))
-            # H = tf.exp(-0.5 * weight_norm2diff_X * mixcoe) * sRBF * tf.cos(1.75 * weight_norm2diff_X)
-            # H = tf.exp(-0.5 * weight_norm2diff_X * mixcoe) * sRBF * tf.cos(1.75 * weight_norm2diff_X * mixcoe)
-            # H = tf.exp(-0.5 *weight_norm2diff_X * mixcoe) * sRBF*0.5*(tf.cos(1.75 * weight_norm2diff_X * mixcoe) + tf.sin(1.75 * weight_norm2diff_X * mixcoe))
-
-        #  ---resnet(one-step skip connection for two consecutive layers if have equal neurons）---
-        hidden_record = self.hidden_units[0]
-        for i_layer in range(len(self.hidden_units) - 1):
-            H_pre = H
-            H = tf.add(tf.matmul(H, self.Ws[i_layer + 1]), self.Bs[i_layer + 1])
-            H = self.actFunc(H)
-            if self.hidden_units[i_layer + 1] == hidden_record:
                 H = H + H_pre
             hidden_record = self.hidden_units[i_layer + 1]
 
