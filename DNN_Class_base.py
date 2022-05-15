@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on 2021.09.08
-@author: xi'an Li
+@author: Xi'an Li
 """
 import tensorflow as tf
 import numpy as np
@@ -270,6 +270,10 @@ class my_actFunc(object):
             out_x = tf.exp(-1.0*x_input*x_input)
         elif str.lower(self.actName) == 'sin':
             out_x = tf.sin(x_input)
+        elif str.lower(self.actName) == 'gcu':  # x*cos
+            out_x = x_input*tf.cos(x_input)
+        elif str.lower(self.actName) == 'sinaddcos':
+            out_x = 0.5*(tf.sin(x_input) + tf.cos(x_input))
         elif str.lower(self.actName) == 'sigmoid':
             out_x = tf.nn.sigmoid(x_input)
         elif str.lower(self.actName) == 'softplus':
@@ -279,10 +283,14 @@ class my_actFunc(object):
         elif str.lower(self.actName) == 'fourier':
             out_x = tf.concat([tf.sin(x), tf.cos(x)], axis=-1)
         elif str.lower(self.actName) == 'gelu':
+            # temp2x = np.sqrt(2 / np.pi) * (x_input + 0.044715 * x_input * x_input * x_input)
+            # out_x = 0.5 * x_input + 0.5 * x_input * tf.tanh(temp2x)    # 原来的gelu输出
+            out_x = x_input*tf.exp(x_input)/(1+tf.exp(x_input))
+        elif str.lower(self.actName) == 'mgelu':
             temp2x = np.sqrt(2 / np.pi) * (x_input + 0.044715 * x_input * x_input * x_input)
-            # out_x = 0.5 * x_input + 0.5 * x_input * tf.tanh(temp2x) # 原来的gelu输出
-            # out_x = 0.5 * + 0.5 * x_input * tf.tanh(temp2x)         # 我写错的gelu输出
-            out_x = 0.25 * x_input * tf.tanh(temp2x)                  # 我的Gelu 输出(误打误撞，得到一个好的激活函数, 效果最好)
+            # out_x = 0.5 * x_input + 0.5 * x_input * tf.tanh(temp2x)  # 原来的gelu输出
+            # out_x = 0.5 * + 0.5 * x_input * tf.tanh(temp2x)          # 我写错的gelu输出
+            out_x = 0.25 * x_input * tf.tanh(temp2x)                   # 我的Gelu 输出(误打误撞，得到一个好的激活函数, 效果最好)
             # out_x = 0.25 * x_input * tf.tanh(temp2x) + 0.25
             # out_x = 0.5*x_input * tf.tanh(temp2x)
             # out_x = x_input * tf.tanh(temp2x)
@@ -1133,10 +1141,7 @@ class Dense_FourierNet(object):
         else:
             repeat_scale = repeat_scale.astype(np.float16)
 
-        if str.lower(self.actName) == 's2relu':
-            H = 0.5 * tf.concat([tf.cos(H * repeat_scale), tf.sin(H * repeat_scale)], axis=-1)
-        else:
-            H = sFourier*tf.concat([tf.cos(H * repeat_scale), tf.sin(H * repeat_scale)], axis=-1)
+        H = sFourier*tf.concat([tf.cos(H * repeat_scale), tf.sin(H * repeat_scale)], axis=-1)
 
         #  ---resnet(one-step skip connection for two consecutive layers if have equal neurons）---
         hidden_record = self.hidden_units[0]
