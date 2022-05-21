@@ -294,7 +294,7 @@ def solve_Multiscale_PDE(R):
 
             loss = loss_it + boundary_penalty * loss_bd + PWB                     # 要优化的loss function
 
-            my_optimizer = tf.train.AdamOptimizer(in_learning_rate)
+            my_optimizer = tf.compat.v1.train.AdamOptimizer(in_learning_rate)
             if R['train_model'] == 'group3_training':
                 train_op1 = my_optimizer.minimize(loss_it, global_step=global_steps)
                 train_op2 = my_optimizer.minimize(loss_bd, global_step=global_steps)

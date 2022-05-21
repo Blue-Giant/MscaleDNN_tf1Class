@@ -385,11 +385,11 @@ def solve_Multiscale_PDE(R):
             size2test = int(np.sqrt(size2batch))
 
     # ConfigProto 加上allow_soft_placement=True就可以使用 gpu 了
-    config = tf.ConfigProto(allow_soft_placement=True)  # 创建sess的时候对sess进行参数配置
+    config = tf.compat.v1.ConfigProto(allow_soft_placement=True)  # 创建sess的时候对sess进行参数配置
     config.gpu_options.allow_growth = True              # True是让TensorFlow在运行过程中动态申请显存，避免过多的显存占用。
     config.allow_soft_placement = True                  # 当指定的设备不存在时，允许选择一个存在的设备运行。比如gpu不存在，自动降到cpu上运行
-    with tf.Session(config=config) as sess:
-        sess.run(tf.global_variables_initializer())
+    with tf.compat.v1.Session(config=config) as sess:
+        sess.run(tf.compat.v1.global_variables_initializer())
         tmp_lr = learning_rate
 
         for i_epoch in range(R['max_epoch'] + 1):
