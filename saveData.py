@@ -117,9 +117,11 @@ def save_testData_or_solus2mat(data, dataName=None, outPath=None):
 
 # 合并保存数据
 def save_2testSolus2mat(exact_solution, dnn_solution, actName=None, actName1=None, outPath=None):
-    outFile2data = '%s/test_solus.mat' % (outPath)
+    outFile2data = '%s/test2%s.mat' % (outPath, actName)
     if str.lower(actName) == 'utrue':
         key2mat_1 = 'Utrue'
+    else:
+        key2mat_1 = 'U%s' % (actName)
     key2mat_2 = 'U%s' % (actName1)
     scio.savemat(outFile2data, {key2mat_1: exact_solution, key2mat_2: dnn_solution})
 
@@ -211,9 +213,21 @@ def save_test_point_wise_err2mat(data2point_wise_err, actName=None, outPath=None
         outFile2data = '%s/pERR2ReLU.mat' % (outPath)
         key2mat = 'pERR2ReLU'
         scio.savemat(outFile2data, {key2mat: data2point_wise_err})
+    elif str.lower(actName) == 'gelu':
+        outFile2data = '%s/pERR2GeLU.mat' % (outPath)
+        key2mat = 'pERR2GeLU'
+        scio.savemat(outFile2data, {key2mat: data2point_wise_err})
+    elif str.lower(actName) == 'mgelu':
+        outFile2data = '%s/pERR2MGeLU.mat' % (outPath)
+        key2mat = 'pERR2MGeLU'
+        scio.savemat(outFile2data, {key2mat: data2point_wise_err})
     elif str.lower(actName) == 'sin':
         outFile2data = '%s/pERR2Sin.mat' % (outPath)
         key2mat = 'pERR2Sin'
+        scio.savemat(outFile2data, {key2mat: data2point_wise_err})
+    elif str.lower(actName) == 'sinaddcos':
+        outFile2data = '%s/pERR2SinAddCos.mat' % (outPath)
+        key2mat = 'pERR2SinAddCos'
         scio.savemat(outFile2data, {key2mat: data2point_wise_err})
     elif str.lower(actName) == 'powsin_srelu':
         outFile2data = '%s/pERR2p2SinSrelu.mat' % (outPath)
@@ -227,6 +241,14 @@ def save_test_point_wise_err2mat(data2point_wise_err, actName=None, outPath=None
         outFile2data = '%s/pERR2elu.mat' % (outPath)
         key2mat = 'pERR2elu'
         scio.savemat(outFile2data, {key2mat: data2point_wise_err})
+    elif str.lower(actName) == 'mish':
+        outFile2data = '%s/pERR2Mish.mat' % (outPath)
+        key2mat = 'pERR2Mish'
+        scio.savemat(outFile2data, {key2mat: data2point_wise_err})
+    elif str.lower(actName) == 'gcu':
+        outFile2data = '%s/pERR2Gcu.mat' % (outPath)
+        key2mat = 'pERR2Gcu'
+        scio.savemat(outFile2data, {key2mat: data2point_wise_err})
     elif str.lower(actName) == 'singauss':
         outFile2data = '%s/pERR2sgauss.mat' % (outPath)
         key2mat = 'pERR2sgauss'
@@ -238,4 +260,8 @@ def save_test_point_wise_err2mat(data2point_wise_err, actName=None, outPath=None
     elif str.lower(actName) == 'sin_modify_mexican':
         outFile2data = '%s/pERR2sm-mexican.mat' % (outPath)
         key2mat = 'pERR2sgauss'
+        scio.savemat(outFile2data, {key2mat: data2point_wise_err})
+    else:
+        outFile2data = '%s/pERR.mat' % (outPath)
+        key2mat = 'pERR'
         scio.savemat(outFile2data, {key2mat: data2point_wise_err})

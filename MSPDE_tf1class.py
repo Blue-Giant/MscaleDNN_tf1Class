@@ -124,8 +124,39 @@ class MscaleDNN(object):
                 dUNNx3x1x2x3 = tf.gradients(dUNN_x3, X)[0]
                 dUNNx1x1 = tf.gather(dUNNx1x1x2x3, [0], axis=-1)
                 dUNNx2x2 = tf.gather(dUNNx2x1x2x3, [1], axis=-1)
-                dUNNx3x3 = tf.gather(dUNNx3x1x2x3, [1], axis=-1)
+                dUNNx3x3 = tf.gather(dUNNx3x1x2x3, [2], axis=-1)
                 loss_it_L2 = dUNNx1x1 + dUNNx2x2 + dUNNx3x3 + tf.reshape(force_side, shape=[-1, 1])
+            elif self.input_dim == 4:
+                dUNN_x1 = tf.gather(dUNN, [0], axis=-1)
+                dUNN_x2 = tf.gather(dUNN, [1], axis=-1)
+                dUNN_x3 = tf.gather(dUNN, [2], axis=-1)
+                dUNN_x4 = tf.gather(dUNN, [3], axis=-1)
+                dUNNx1x1x2x3x4 = tf.gradients(dUNN_x1, X)[0]
+                dUNNx2x1x2x3x4 = tf.gradients(dUNN_x2, X)[0]
+                dUNNx3x1x2x3x4 = tf.gradients(dUNN_x3, X)[0]
+                dUNNx4x1x2x3x4 = tf.gradients(dUNN_x4, X)[0]
+                dUNNx1x1 = tf.gather(dUNNx1x1x2x3x4, [0], axis=-1)
+                dUNNx2x2 = tf.gather(dUNNx2x1x2x3x4, [1], axis=-1)
+                dUNNx3x3 = tf.gather(dUNNx3x1x2x3x4, [2], axis=-1)
+                dUNNx4x4 = tf.gather(dUNNx4x1x2x3x4, [3], axis=-1)
+                loss_it_L2 = dUNNx1x1 + dUNNx2x2 + dUNNx3x3 + dUNNx4x4 + tf.reshape(force_side, shape=[-1, 1])
+            elif self.input_dim == 5:
+                dUNN_x1 = tf.gather(dUNN, [0], axis=-1)
+                dUNN_x2 = tf.gather(dUNN, [1], axis=-1)
+                dUNN_x3 = tf.gather(dUNN, [2], axis=-1)
+                dUNN_x4 = tf.gather(dUNN, [3], axis=-1)
+                dUNN_x5 = tf.gather(dUNN, [4], axis=-1)
+                dUNNx1x1x2x3x4x5 = tf.gradients(dUNN_x1, X)[0]
+                dUNNx2x1x2x3x4x5 = tf.gradients(dUNN_x2, X)[0]
+                dUNNx3x1x2x3x4x5 = tf.gradients(dUNN_x3, X)[0]
+                dUNNx4x1x2x3x4x5 = tf.gradients(dUNN_x4, X)[0]
+                dUNNx5x1x2x3x4x5 = tf.gradients(dUNN_x5, X)[0]
+                dUNNx1x1 = tf.gather(dUNNx1x1x2x3x4x5, [0], axis=-1)
+                dUNNx2x2 = tf.gather(dUNNx2x1x2x3x4x5, [1], axis=-1)
+                dUNNx3x3 = tf.gather(dUNNx3x1x2x3x4x5, [2], axis=-1)
+                dUNNx4x4 = tf.gather(dUNNx4x1x2x3x4x5, [3], axis=-1)
+                dUNNx5x5 = tf.gather(dUNNx5x1x2x3x4x5, [4], axis=-1)
+                loss_it_L2 = dUNNx1x1 + dUNNx2x2 + dUNNx3x3 + dUNNx4x4 + dUNNx5x5 + tf.reshape(force_side, shape=[-1, 1])
             square_loss_it = tf.square(loss_it_L2)
             loss_it = tf.reduce_mean(square_loss_it)
         return UNN, loss_it
@@ -345,7 +376,50 @@ class MscaleDNN(object):
 
         return UNN, loss_it
 
-    def loss2bd(self, X_bd=None, Ubd_exact=None, if_lambda2Ubd=True):
+    # 0 阶导数边界条件(Dirichlet 边界)
+    def loss_bd2Dirichlet(self, X_bd=None, Ubd_exact=None, if_lambda2Ubd=True):
+        assert (X_bd is not None)
+        assert (Ubd_exact is not None)
+
+        shape2X = X_bd.get_shape().as_list()
+        lenght2X_shape = len(shape2X)
+        assert (lenght2X_shape == 2)
+
+        if if_lambda2Ubd:
+            if self.input_dim == 1:
+                Ubd = Ubd_exact(X_bd)
+            elif self.input_dim == 2:
+                X1_bd = tf.reshape(X_bd[:, 0], shape=[-1, 1])
+                X2_bd = tf.reshape(X_bd[:, 1], shape=[-1, 1])
+                Ubd = Ubd_exact(X1_bd, X2_bd)
+            elif self.input_dim == 3:
+                X1_bd = tf.reshape(X_bd[:, 0], shape=[-1, 1])
+                X2_bd = tf.reshape(X_bd[:, 1], shape=[-1, 1])
+                X3_bd = tf.reshape(X_bd[:, 2], shape=[-1, 1])
+                Ubd = Ubd_exact(X1_bd, X2_bd, X3_bd)
+            elif self.input_dim == 4:
+                X1_bd = tf.reshape(X_bd[:, 0], shape=[-1, 1])
+                X2_bd = tf.reshape(X_bd[:, 1], shape=[-1, 1])
+                X3_bd = tf.reshape(X_bd[:, 2], shape=[-1, 1])
+                X4_bd = tf.reshape(X_bd[:, 3], shape=[-1, 1])
+                Ubd = Ubd_exact(X1_bd, X2_bd, X3_bd, X4_bd)
+            elif self.input_dim == 5:
+                X1_bd = tf.reshape(X_bd[:, 0], shape=[-1, 1])
+                X2_bd = tf.reshape(X_bd[:, 1], shape=[-1, 1])
+                X3_bd = tf.reshape(X_bd[:, 2], shape=[-1, 1])
+                X4_bd = tf.reshape(X_bd[:, 3], shape=[-1, 1])
+                X5_bd = tf.reshape(X_bd[:, 4], shape=[-1, 1])
+                Ubd = Ubd_exact(X1_bd, X2_bd, X3_bd, X4_bd, X5_bd)
+        else:
+            Ubd = Ubd_exact
+
+        UNN_bd = self.DNN(X_bd, scale=self.factor2freq, sFourier=self.sFourier)
+        loss_bd_square = tf.square(UNN_bd - Ubd)
+        loss_bd = tf.reduce_mean(loss_bd_square)
+        return loss_bd
+
+    # 1 阶导数边界条件(Neumann 边界)
+    def loss_bd2Neumann(self, X_bd=None, Ubd_exact=None, if_lambda2Ubd=True):
         assert (X_bd is not None)
         assert (Ubd_exact is not None)
 
@@ -395,6 +469,7 @@ class MscaleDNN(object):
         return UNN
 
 
+# 求解二维问题
 def solve_Multiscale_PDE(R):
     log_out_path = R['FolderName']        # 将路径从字典 R 中提取出来
     if not os.path.exists(log_out_path):  # 判断路径是否已经存在
@@ -513,7 +588,7 @@ def solve_Multiscale_PDE(R):
 
             loss = loss_it + boundary_penalty * loss_bd + PWB                     # 要优化的loss function
 
-            my_optimizer = tf.train.AdamOptimizer(in_learning_rate)
+            my_optimizer = tf.compat.v1.train.AdamOptimizer(in_learning_rate)
             if R['train_model'] == 'group3_training':
                 train_op1 = my_optimizer.minimize(loss_it, global_step=global_steps)
                 train_op2 = my_optimizer.minimize(loss_bd, global_step=global_steps)
@@ -587,10 +662,10 @@ def solve_Multiscale_PDE(R):
             size2test = int(np.sqrt(size2batch))
 
     # ConfigProto 加上allow_soft_placement=True就可以使用 gpu 了
-    config = tf.ConfigProto(allow_soft_placement=True)  # 创建sess的时候对sess进行参数配置
+    config = tf.compat.v1.ConfigProto(allow_soft_placement=True)  # 创建sess的时候对sess进行参数配置
     config.gpu_options.allow_growth = True              # True是让TensorFlow在运行过程中动态申请显存，避免过多的显存占用。
     config.allow_soft_placement = True                  # 当指定的设备不存在时，允许选择一个存在的设备运行。比如gpu不存在，自动降到cpu上运行
-    with tf.Session(config=config) as sess:
+    with tf.compat.v1.Session(config=config) as sess:
         sess.run(tf.global_variables_initializer())
         tmp_lr = learning_rate
 

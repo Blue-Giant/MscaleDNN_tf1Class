@@ -32,6 +32,17 @@ def get_randomData2mat(dim=2, data_path=None):
     return data2points
 
 
+def get_meshData(mesh_number=2, data_path=None):
+    file_name2data = str(data_path) + '/' + str('meshXY') + str(mesh_number) + str('.mat')
+    mesh_points = load_Matlab_data(file_name2data)
+    XY_points = mesh_points['meshXY']
+    shape2XY = np.shape(XY_points)
+    assert(len(shape2XY) == 2)
+    if shape2XY[0] == 2:
+        xy_data = np.transpose(XY_points, (1, 0))
+    return xy_data
+
+
 def get_meshData2Laplace(equation_name=None, mesh_number=2):
     if equation_name == 'multi_scale2D_1':
         test_meshXY_file = 'dataMat2pLaplace/E1/' + str('meshXY') + str(mesh_number) + str('.mat')
