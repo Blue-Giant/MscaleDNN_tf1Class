@@ -666,7 +666,7 @@ def solve_Multiscale_PDE(R):
     config.gpu_options.allow_growth = True              # True是让TensorFlow在运行过程中动态申请显存，避免过多的显存占用。
     config.allow_soft_placement = True                  # 当指定的设备不存在时，允许选择一个存在的设备运行。比如gpu不存在，自动降到cpu上运行
     with tf.compat.v1.Session(config=config) as sess:
-        sess.run(tf.global_variables_initializer())
+        sess.run(tf.compat.v1.global_variables_initializer())
         tmp_lr = learning_rate
 
         for i_epoch in range(R['max_epoch'] + 1):
@@ -972,14 +972,6 @@ if __name__ == "__main__":
         # R['sfourier'] = 1.0
         # R['sfourier'] = 5.0
         R['sfourier'] = 0.75
-
-    if R['model2NN'] == 'Wavelet_DNN':
-        # R['freq'] = np.concatenate(([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9], np.arange(1, 100 - 9)), axis=0)
-        # R['freq'] = np.concatenate(([0.25, 0.5, 0.6, 0.7, 0.8, 0.9], np.arange(1, 100 - 6)), axis=0)
-        # R['freq'] = np.concatenate(([0.5, 0.6, 0.7, 0.8, 0.9], np.arange(1, 100 - 5)), axis=0)
-        # R['freq'] = np.concatenate(([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9], np.arange(1, 30-9)), axis=0)
-        R['freq'] = np.concatenate(([0.25, 0.5, 0.6, 0.7, 0.8, 0.9], np.arange(1, 100 - 6)), axis=0)
-        # R['freq'] = np.arange(1, 100)
 
     solve_Multiscale_PDE(R)
 
