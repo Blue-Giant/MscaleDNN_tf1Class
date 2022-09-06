@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+"""
+@author: LXA
+ Date: 2020 年 5 月 31 日
+"""
 import numpy as np
 
 
@@ -38,12 +43,6 @@ def rand_bd_2D(batch_size, variable_dim, region_a, region_b):
     x_right_bd = (region_b - region_a) * np.random.random([batch_size, 2]) + region_a
     y_bottom_bd = (region_b - region_a) * np.random.random([batch_size, 2]) + region_a
     y_top_bd = (region_b - region_a) * np.random.random([batch_size, 2]) + region_a
-
-    for ii in range(batch_size):
-        x_left_bd[ii, 0] = region_a
-        x_right_bd[ii, 0] = region_b
-        y_bottom_bd[ii, 1] = region_a
-        y_top_bd[ii, 1] = region_b
 
     for ii in range(batch_size):
         x_left_bd[ii, 0] = region_a
