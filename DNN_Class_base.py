@@ -260,6 +260,8 @@ class my_actFunc(object):
             out_x = tf.nn.leaky_relu(x_input)
         elif str.lower(self.actName) == 'tanh':
             out_x = tf.nn.relu(x_input)
+        elif str.lower(self.actName) == 'enhance_tanh' or str.lower(self.actName) == 'enh_tanh':  # 增强的Tanh函数 Enhance Tanh
+            out_x = tf.tanh(0.5 * np.pi * x_input)
         elif str.lower(self.actName) == 'srelu':
             out_x = tf.nn.relu(x_input)*tf.nn.relu(1-x_input)
         elif str.lower(self.actName) == 's2relu':
@@ -486,7 +488,7 @@ class DenseNet(object):
             self.Ws.append(Wout)
             self.Bs.append(Bout)
 
-    def get_regular_sum2WB(self, regular_model):
+    def get_regular_sum2WB(self, regular_model='L0'):
         layers = len(self.hidden_units)+1
         if regular_model == 'L1':
             regular_w = 0
@@ -505,7 +507,7 @@ class DenseNet(object):
             regular_b = tf.constant(0.0)
         return regular_w + regular_b
 
-    def __call__(self, inputs, scale=None, sFourier=0.5):
+    def __call__(self, inputs, scale=None, sFourier=1.0):
         """
         Args
             inputs: the input point set [num, in-dim]
@@ -667,7 +669,7 @@ class Dense_Net(object):
             self.Ws.append(Wout)
             self.Bs.append(Bout)
 
-    def get_regular_sum2WB(self, regular_model):
+    def get_regular_sum2WB(self, regular_model='L0'):
         layers = len(self.hidden_units)+1
         if regular_model == 'L1':
             regular_w = 0
@@ -785,8 +787,7 @@ class Pure_Dense_Net(object):
         self.actFunc = my_actFunc(actName=actName)
         self.actFunc_out = my_actFunc(actName=actName2out)
         self.type2float = type2float
-        self.Ws = []
-        self.Bs = []
+
         if type2float == 'float32':
             self.float_type = tf.float32
         elif type2float == 'float64':
@@ -794,6 +795,8 @@ class Pure_Dense_Net(object):
         else:
             self.float_type = tf.float16
 
+        self.Ws = []
+        self.Bs = []
         with tf.compat.v1.variable_scope('WB_scope', reuse=tf.compat.v1.AUTO_REUSE):
             stddev_WB = (2.0 / (indim + hidden_units[0])) ** varcoe
             Win = tf.compat.v1.get_variable(name=str(scope2W) + '_in', shape=(indim, hidden_units[0]),
@@ -828,7 +831,7 @@ class Pure_Dense_Net(object):
             self.Ws.append(Wout)
             self.Bs.append(Bout)
 
-    def get_regular_sum2WB(self, regular_model):
+    def get_regular_sum2WB(self, regular_model='L0'):
         layers = len(self.hidden_units)+1
         if regular_model == 'L1':
             regular_w = 0
@@ -905,8 +908,7 @@ class Dense_ScaleNet(object):
         self.actFunc_out = my_actFunc(actName=actName2out)
         self.repeat_high_freq = repeat_high_freq
         self.type2float = type2float
-        self.Ws = []
-        self.Bs = []
+
         if type2float == 'float32':
             self.float_type = tf.float32
         elif type2float == 'float64':
@@ -914,6 +916,8 @@ class Dense_ScaleNet(object):
         else:
             self.float_type = tf.float16
 
+        self.Ws = []
+        self.Bs = []
         with tf.compat.v1.variable_scope('WB_scope', reuse=tf.compat.v1.AUTO_REUSE):
             stddev_WB = (2.0 / (indim + hidden_units[0])) ** varcoe
             Win = tf.compat.v1.get_variable(name=str(scope2W) + '_in', shape=(indim, hidden_units[0]),
@@ -947,7 +951,7 @@ class Dense_ScaleNet(object):
             self.Ws.append(Wout)
             self.Bs.append(Bout)
 
-    def get_regular_sum2WB(self, regular_model):
+    def get_regular_sum2WB(self, regular_model='L0'):
         layers = len(self.hidden_units)+1
         if regular_model == 'L1':
             regular_w = 0
@@ -1040,8 +1044,7 @@ class Dense_FourierNet(object):
         self.actFunc_out = my_actFunc(actName=actName2out)
         self.repeat_high_freq = repeat_high_freq
         self.type2float = type2float
-        self.Ws = []
-        self.Bs = []
+
         if type2float == 'float32':
             self.float_type = tf.float32
         elif type2float == 'float64':
@@ -1049,6 +1052,8 @@ class Dense_FourierNet(object):
         else:
             self.float_type = tf.float16
 
+        self.Ws = []
+        self.Bs = []
         with tf.compat.v1.variable_scope('WB_scope', reuse=tf.compat.v1.AUTO_REUSE):
             stddev_WB = (2.0 / (indim + hidden_units[0])) ** varcoe
             Win = tf.compat.v1.get_variable(
@@ -1094,7 +1099,7 @@ class Dense_FourierNet(object):
             self.Ws.append(Wout)
             self.Bs.append(Bout)
 
-    def get_regular_sum2WB(self, regular_model):
+    def get_regular_sum2WB(self, regular_model='L0'):
         layers = len(self.hidden_units)+1
         if regular_model == 'L1':
             regular_w = 0
