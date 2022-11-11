@@ -746,6 +746,27 @@ def plot_scatter_solution2test(solu2test, test_batch, actName=None, seedNo=1000,
         return
 
 
+def plot_scatter_solu2test(solu2test, x_points, t_points, actName=None, seedNo=1000, outPath=None):
+    test_x_bach = np.reshape(x_points, newshape=[-1, 1])
+    test_y_bach = np.reshape(t_points, newshape=[-1, 1])
+
+    # 绘制解的3D散点图
+    fig = plt.figure(figsize=(10, 10))
+    ax = Axes3D(fig)
+    ax.scatter(test_x_bach, test_y_bach, solu2test, c='r', label=actName)
+
+    # 绘制图例
+    ax.legend(loc='best')
+    # 添加坐标轴(顺序是X，Y, Z)
+    ax.set_xlabel('X', fontdict={'size': 15, 'color': 'red'})
+    ax.set_ylabel('Y', fontdict={'size': 15, 'color': 'red'})
+    ax.set_zlabel('u', fontdict={'size': 15, 'color': 'red'})
+
+    # plt.title('solution', fontsize=15)
+    fntmp = '%s/%ssolu' % (outPath, seedNo)
+    DNN_tools.mySaveFig(plt, fntmp, ax=ax, isax=1, iseps=0)
+
+
 def plot_scatter_solutions2test(solu1_test, solu2_test, test_batch, actName1=None, actName2=None, seedNo=1000,
                                 outPath=None):
     dim2test_batch = 2
