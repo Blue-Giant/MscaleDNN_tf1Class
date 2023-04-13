@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on 2021.09.08
+Final version 2023.04.13
 @author: Xi'an Li
 """
 import tensorflow as tf
@@ -772,7 +773,7 @@ class Pure_Dense_Net(object):
         actName2out: the name of activation function for output layer
         scope2W: the namespace of weight
         scope2B: the namespace of bias
-        if name2Model is not wavelet NN, actName2in is not same as actName; otherwise, actName2in is same as actName
+        type2float: the numerical type
     """
     def __init__(self, indim=1, outdim=1, hidden_units=None, name2Model='DNN', actName2in='tanh', actName='tanh',
                  actName2out='linear', scope2W='Weight', scope2B='Bias', type2float='float32', varcoe=0.5):
@@ -890,7 +891,7 @@ class Dense_ScaleNet(object):
         scope2W: the namespace of weight
         scope2B: the namespace of bias
         repeat_high_freq: repeating the high-frequency component of scale-transformation factor or not
-        if name2Model is not wavelet NN, actName2in is not same as actName; otherwise, actName2in is same as actName
+        type2float: the numerical type
     """
     def __init__(self, indim=1, outdim=1, hidden_units=None, name2Model='DNN', actName2in='tanh', actName='tanh',
                  actName2out='linear', scope2W='Weight', scope2B='Bias', repeat_high_freq=True, type2float='float32',
@@ -1014,7 +1015,7 @@ class Dense_ScaleNet(object):
         return out_result
 
 
-class Dense_FourierNet(object):
+class Scale_SubNets(object):
     """
     Args:
         indim: the dimension for input data
@@ -1027,24 +1028,27 @@ class Dense_FourierNet(object):
         scope2W: the namespace of weight
         scope2B: the namespace of bias
         repeat_high_freq: repeating the high-frequency component of scale-transformation factor or not
-        if name2Model is not wavelet NN, actName2in is not same as actName; otherwise, actName2in is same as actName
+        type2float: the numerical type
+        num2subnets: the number of sub-nets
     """
     def __init__(self, indim=1, outdim=1, hidden_units=None, name2Model='DNN', actName2in='tanh', actName='tanh',
                  actName2out='linear', scope2W='Weight', scope2B='Bias', repeat_high_freq=True, type2float='float32',
-                 varcoe=0.5):
-        super(Dense_FourierNet, self).__init__()
+                 varcoe=0.5, num2subnets=5):
+        super(Scale_SubNets, self).__init__()
         self.indim = indim
         self.outdim = outdim
         self.hidden_units = hidden_units
         self.name2Model = name2Model
+        self.actName2in = actName2in
         self.actName = actName
         self.actName2out = actName2out
+        self.actFunc_in = my_actFunc(actName=actName2in)
         self.actFunc = my_actFunc(actName=actName)
         self.actFunc_out = my_actFunc(actName=actName2out)
         self.repeat_high_freq = repeat_high_freq
         self.type2float = type2float
-        self.Ws = []
-        self.Bs = []
+        self.num2subnets = num2subnets
+
         if type2float == 'float32':
             self.float_type = tf.float32
         elif type2float == 'float64':
@@ -1052,53 +1056,52 @@ class Dense_FourierNet(object):
         else:
             self.float_type = tf.float16
 
-        with tf.compat.v1.variable_scope('WB_scope', reuse=tf.compat.v1.AUTO_REUSE):
-            stddev_WB = (2.0 / (indim + hidden_units[0])) ** varcoe
-            Win = tf.compat.v1.get_variable(
-                name=str(scope2W) + '_in', shape=(indim, hidden_units[0]),
-                initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True, dtype=self.float_type)
-            # Bin = tf.compat.v1.get_variable(
-            #     name=str(scope2B) + '_in', shape=(hidden_units[0],),
-            #     initializer=tf.random_normal_initializer(stddev=stddev_WB), dtype=self.float_type, trainable=False)
-            Bin = tf.compat.v1.get_variable(
-                name=str(scope2B) + '_in', shape=(hidden_units[0],),
-                initializer=tf.zeros_initializer(), dtype=self.float_type, trainable=False)
-            self.Ws.append(Win)
-            self.Bs.append(Bin)
-            for i_layer in range(len(hidden_units)-1):
-                stddev_WB = (2.0 / (hidden_units[i_layer] + hidden_units[i_layer + 1])) ** varcoe
-                if i_layer == 0:
-                    W = tf.compat.v1.get_variable(
-                        name=str(scope2W) + str(i_layer), shape=(hidden_units[i_layer] * 2, hidden_units[i_layer + 1]),
-                        initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True,
-                        dtype=self.float_type)
-                    B = tf.compat.v1.get_variable(
-                        name=str(scope2B) + str(i_layer), shape=(hidden_units[i_layer + 1],),
-                        initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True,
-                        dtype=self.float_type)
-                else:
-                    W = tf.compat.v1.get_variable(
-                        name=str(scope2W) + str(i_layer), shape=(hidden_units[i_layer], hidden_units[i_layer + 1]),
-                        initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True,
-                        dtype=self.float_type)
-                    B = tf.compat.v1.get_variable(
-                        name=str(scope2B) + str(i_layer), shape=(hidden_units[i_layer + 1],),
-                        initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True,
-                        dtype=self.float_type)
-                self.Ws.append(W)
-                self.Bs.append(B)
+        self.Ws = []
+        self.Bs = []
+        for i_net in range(num2subnets):
+            with tf.compat.v1.variable_scope('WB_scope', reuse=tf.compat.v1.AUTO_REUSE):
+                stddev_WB = (2.0 / (indim + hidden_units[0])) ** varcoe
+                Win = tf.compat.v1.get_variable(name=str(scope2W) + str(i_net) + '_in',
+                                                shape=(indim, hidden_units[0]),
+                                                initializer=tf.random_normal_initializer(stddev=stddev_WB),
+                                                trainable=True,
+                                                dtype=self.float_type)
+                Bin = tf.compat.v1.get_variable(name=str(scope2B) + str(i_net) + '_in',
+                                                shape=(hidden_units[0],),
+                                                initializer=tf.random_normal_initializer(stddev=stddev_WB),
+                                                dtype=self.float_type,
+                                                trainable=True)
+                self.Ws.append(Win)
+                self.Bs.append(Bin)
+                for i_layer in range(len(hidden_units) - 1):
+                    stddev_WB = (2.0 / (hidden_units[i_layer] + hidden_units[i_layer + 1])) ** varcoe
+                    W = tf.compat.v1.get_variable(name=str(scope2W) + str(i_net) + str(i_layer),
+                                                  shape=(hidden_units[i_layer], hidden_units[i_layer + 1]),
+                                                  initializer=tf.random_normal_initializer(stddev=stddev_WB),
+                                                  trainable=True,
+                                                  dtype=self.float_type)
+                    B = tf.compat.v1.get_variable(name=str(scope2B) + str(i_net) + str(i_layer),
+                                                  shape=(hidden_units[i_layer + 1],),
+                                                  initializer=tf.random_normal_initializer(stddev=stddev_WB),
+                                                  trainable=True, dtype=self.float_type)
+                    self.Ws.append(W)
+                    self.Bs.append(B)
 
-            # 输出层：最后一层的权重和偏置。将最后的结果变换到输出维度
-            stddev_WB = (2.0 / (hidden_units[-1] + outdim)) ** varcoe
-            Wout = tf.compat.v1.get_variable(
-                name=str(scope2W) + '_out', shape=(hidden_units[-1], outdim),
-                initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True, dtype=self.float_type)
-            Bout = tf.compat.v1.get_variable(
-                name=str(scope2B) + '_out', shape=(outdim,), initializer=tf.random_normal_initializer(stddev=stddev_WB),
-                trainable=True, dtype=self.float_type)
+                # 输出层：最后一层的权重和偏置。将最后的结果变换到输出维度
+                stddev_WB = (2.0 / (hidden_units[-1] + outdim)) ** varcoe
+                Wout = tf.compat.v1.get_variable(name=str(scope2W) + str(i_net) + '_out',
+                                                 shape=(hidden_units[-1], outdim),
+                                                 initializer=tf.random_normal_initializer(stddev=stddev_WB),
+                                                 trainable=True,
+                                                 dtype=self.float_type)
+                Bout = tf.compat.v1.get_variable(name=str(scope2B) + str(i_net) + '_out',
+                                                 shape=(outdim,),
+                                                 initializer=tf.random_normal_initializer(stddev=stddev_WB),
+                                                 trainable=True,
+                                                 dtype=self.float_type)
 
-            self.Ws.append(Wout)
-            self.Bs.append(Bout)
+                self.Ws.append(Wout)
+                self.Bs.append(Bout)
 
     def get_regular_sum2WB(self, regular_model):
         layers = len(self.hidden_units)+1
@@ -1127,31 +1130,164 @@ class Dense_FourierNet(object):
         return
             output: the output point set [num, out-dim]
         """
-        # ------ dealing with the input data ---------------
-        H = tf.add(tf.matmul(inputs, self.Ws[0]), self.Bs[0])
+
         assert (len(scale) != 0)
-        repeat_num = int(self.hidden_units[0] / len(scale))
-        repeat_scale = np.repeat(scale, repeat_num)
+        out_result = 0.0
+        len2hidden = len(self.hidden_units)
+        for i_net in range(self.num2subnets):
+            i_in_layer = i_net*(len2hidden + 1)
+            # ------ dealing with the input data ---------------
+            H = tf.add(tf.matmul(inputs * scale[i_net], self.Ws[i_in_layer]), self.Bs[i_in_layer])
+            H = self.actFunc_in(H)
 
-        if self.repeat_high_freq:
-            repeat_scale = np.concatenate(
-                (repeat_scale, np.ones([self.hidden_units[0] - repeat_num * len(scale)]) * scale[-1]))
+            #  ---resnet(one-step skip connection for two consecutive layers if have equal neurons）---
+            hidden_record = self.hidden_units[0]
+            for i_layer in range(len2hidden - 1):
+                i_hidden_layer = i_net * (len2hidden + 1) + i_layer + 1
+                # W_hidden = self.Ws[i_hidden_layer]
+                H_pre = H
+                H = tf.add(tf.matmul(H, self.Ws[i_hidden_layer]), self.Bs[i_hidden_layer])
+                H = self.actFunc(H)
+                if self.hidden_units[i_layer + 1] == hidden_record:
+                    H = H + H_pre
+                hidden_record = self.hidden_units[i_layer + 1]
+
+            i_out_layer = i_net * (len2hidden + 1) + len2hidden
+            H = tf.add(tf.matmul(H, self.Ws[i_out_layer]), self.Bs[i_out_layer])
+            out_result = out_result + self.actFunc_out(H)*(1.0/self.num2subnets)
+        return out_result
+
+
+class Scale_SubNets3D(object):
+    """
+    Args:
+        indim: the dimension for input data
+        outdim: the dimension for output
+        hidden_units: the number of  units for hidden layer, a list or a tuple
+        name2Model: the name of using DNN type, DNN , ScaleDNN or FourierDNN
+        actName2in: the name of activation function for input layer
+        actName: the name of activation function for hidden layer
+        actName2out: the name of activation function for output layer
+        scope2W: the namespace of weight
+        scope2B: the namespace of bias
+        repeat_high_freq: repeating the high-frequency component of scale-transformation factor or not
+        type2float: the numerical type
+        num2subnets: the number of sub-nets
+    """
+    def __init__(self, indim=1, outdim=1, hidden_units=None, name2Model='DNN', actName2in='tanh', actName='tanh',
+                 actName2out='linear', scope2W='Weight', scope2B='Bias', repeat_high_freq=True, type2float='float32',
+                 varcoe=0.5, num2subnets=5):
+        super(Scale_SubNets3D, self).__init__()
+        self.indim = indim
+        self.outdim = outdim
+        self.hidden_units = hidden_units
+        self.name2Model = name2Model
+        self.actName2in = actName2in
+        self.actName = actName
+        self.actName2out = actName2out
+        self.actFunc_in = my_actFunc(actName=actName2in)
+        self.actFunc = my_actFunc(actName=actName)
+        self.actFunc_out = my_actFunc(actName=actName2out)
+        self.repeat_high_freq = repeat_high_freq
+        self.type2float = type2float
+        self.num2subnets = num2subnets
+
+        if type2float == 'float32':
+            self.float_type = tf.float32
+        elif type2float == 'float64':
+            self.float_type = tf.float64
         else:
-            repeat_scale = np.concatenate(
-                (np.ones([self.hidden_units[0] - repeat_num * len(scale)]) * scale[0], repeat_scale))
+            self.float_type = tf.float16
 
-        if self.type2float == 'float32':
-            repeat_scale = repeat_scale.astype(np.float32)
-        elif self.type2float == 'float64':
-            repeat_scale = repeat_scale.astype(np.float64)
+        self.Ws = []
+        self.Bs = []
+        with tf.compat.v1.variable_scope('WB_scope', reuse=tf.compat.v1.AUTO_REUSE):
+            stddev_WB = (2.0 / (indim + hidden_units[0])) ** varcoe
+            Win = tf.compat.v1.get_variable(name=str(scope2W) + '_in',
+                                            shape=(num2subnets, indim, hidden_units[0]),
+                                            initializer=tf.random_normal_initializer(stddev=stddev_WB),
+                                            trainable=True, dtype=self.float_type)
+            Bin = tf.compat.v1.get_variable(name=str(scope2B) + '_in',
+                                            shape=(num2subnets, 1, hidden_units[0]),
+                                            initializer=tf.random_normal_initializer(stddev=stddev_WB),
+                                            trainable=True, dtype=self.float_type)
+            self.Ws.append(Win)
+            self.Bs.append(Bin)
+            for i_layer in range(len(hidden_units) - 1):
+                stddev_WB = (2.0 / (hidden_units[i_layer] + hidden_units[i_layer + 1])) ** varcoe
+                W = tf.compat.v1.get_variable(name=str(scope2W) + str(i_layer),
+                                              shape=(num2subnets, hidden_units[i_layer], hidden_units[i_layer + 1]),
+                                              initializer=tf.random_normal_initializer(stddev=stddev_WB),
+                                              trainable=True, dtype=self.float_type)
+                B = tf.compat.v1.get_variable(name=str(scope2B) + str(i_layer),
+                                              shape=(num2subnets, 1, hidden_units[i_layer + 1]),
+                                              # shape=(num2subnets, hidden_units[i_layer + 1], 1),
+                                              initializer=tf.random_normal_initializer(stddev=stddev_WB),
+                                              trainable=True, dtype=self.float_type)
+                self.Ws.append(W)
+                self.Bs.append(B)
+
+            # 输出层：最后一层的权重和偏置。将最后的结果变换到输出维度
+            stddev_WB = (2.0 / (hidden_units[-1] + outdim)) ** varcoe
+            Wout = tf.compat.v1.get_variable(name=str(scope2W) + '_out',
+                                             shape=(num2subnets, hidden_units[-1], outdim),
+                                             initializer=tf.random_normal_initializer(stddev=stddev_WB),
+                                             trainable=True, dtype=self.float_type)
+            Bout = tf.compat.v1.get_variable(name=str(scope2B) + '_out',
+                                             shape=(num2subnets, 1, outdim),
+                                             initializer=tf.random_normal_initializer(stddev=stddev_WB),
+                                             trainable=True, dtype=self.float_type)
+
+            self.Ws.append(Wout)
+            self.Bs.append(Bout)
+
+            # stddev_WB = (2.0 / (num2subnets + 1)) ** varcoe
+            # self.weight2subnets = tf.compat.v1.get_variable(name=str(scope2W) + '_subnet',
+            #                                                 shape=(num2subnets, 1, 1),
+            #                                                 initializer=tf.random_normal_initializer(stddev=stddev_WB),
+            #                                                 trainable=True, dtype=self.float_type)
+
+    def get_regular_sum2WB(self, regular_model):
+        layers = len(self.hidden_units)+1
+        if regular_model == 'L1':
+            regular_w = 0
+            regular_b = 0
+            for i_layer in range(layers):
+                regular_w = regular_w + tf.reduce_sum(tf.abs(self.Ws[i_layer]), keepdims=False)
+                regular_b = regular_b + tf.reduce_sum(tf.abs(self.Bs[i_layer]), keepdims=False)
+        elif regular_model == 'L2':
+            regular_w = 0
+            regular_b = 0
+            for i_layer in range(layers):
+                regular_w = regular_w + tf.reduce_sum(tf.square(self.Ws[i_layer]), keepdims=False)
+                regular_b = regular_b + tf.reduce_sum(tf.square(self.Bs[i_layer]), keepdims=False)
         else:
-            repeat_scale = repeat_scale.astype(np.float16)
+            regular_w = tf.constant(0.0)
+            regular_b = tf.constant(0.0)
+        return regular_w + regular_b
 
-        H = sFourier*tf.concat([tf.cos(H * repeat_scale), tf.sin(H * repeat_scale)], axis=-1)
+    def __call__(self, inputs, scale=None, sFourier=1.0):
+        """
+        Args
+            inputs: the input point set [num, in-dim]
+            scale: The scale-factor to transform the input-data
+        return
+            output: the output point set [num, out-dim]
+        """
+        assert (len(scale) != 0)
+        expand_scale = np.expand_dims(scale, axis=-1)
+        exapnd2_scale = np.expand_dims(expand_scale, axis=-1)
+        exapnd2_scale = exapnd2_scale.astype(dtype=np.float32)
+        len2hidden = len(self.hidden_units)
+
+        H_in = tf.matmul(inputs, self.Ws[0])
+        H_scale = tf.multiply(exapnd2_scale, H_in)
+        H = tf.add(H_scale, self.Bs[0])
+        H = self.actFunc_in(H)
 
         #  ---resnet(one-step skip connection for two consecutive layers if have equal neurons）---
         hidden_record = self.hidden_units[0]
-        for i_layer in range(len(self.hidden_units) - 1):
+        for i_layer in range(len2hidden - 1):
             H_pre = H
             H = tf.add(tf.matmul(H, self.Ws[i_layer + 1]), self.Bs[i_layer + 1])
             H = self.actFunc(H)
@@ -1161,6 +1297,9 @@ class Dense_FourierNet(object):
 
         H = tf.add(tf.matmul(H, self.Ws[-1]), self.Bs[-1])
         out_result = self.actFunc_out(H)
+        # out_result = tf.multiply(out_result, self.weight2subnets)
+        out_result = tf.multiply(out_result, 1.0/exapnd2_scale)
+        out_result = tf.reduce_mean(out_result, axis=0)
         return out_result
 
 
@@ -2054,7 +2193,7 @@ class Multi_8FF_DNN(object):
         return out_result
 
 
-class Scale_SubNets(object):
+class Dense_FourierNet(object):
     """
     Args:
         indim: the dimension for input data
@@ -2067,27 +2206,24 @@ class Scale_SubNets(object):
         scope2W: the namespace of weight
         scope2B: the namespace of bias
         repeat_high_freq: repeating the high-frequency component of scale-transformation factor or not
-        num2subnets: the number of sub-nets
-        if name2Model is not wavelet NN, actName2in is not same as actName; otherwise, actName2in is same as actName
+        type2float: the numerical type
     """
     def __init__(self, indim=1, outdim=1, hidden_units=None, name2Model='DNN', actName2in='tanh', actName='tanh',
                  actName2out='linear', scope2W='Weight', scope2B='Bias', repeat_high_freq=True, type2float='float32',
-                 varcoe=0.5, num2subnets=5):
-        super(Scale_SubNets, self).__init__()
+                 varcoe=0.5):
+        super(Dense_FourierNet, self).__init__()
         self.indim = indim
         self.outdim = outdim
         self.hidden_units = hidden_units
         self.name2Model = name2Model
-        self.actName2in = actName2in
         self.actName = actName
         self.actName2out = actName2out
-        self.actFunc_in = my_actFunc(actName=actName2in)
         self.actFunc = my_actFunc(actName=actName)
         self.actFunc_out = my_actFunc(actName=actName2out)
         self.repeat_high_freq = repeat_high_freq
         self.type2float = type2float
-        self.num2subnets = num2subnets
-
+        self.Ws = []
+        self.Bs = []
         if type2float == 'float32':
             self.float_type = tf.float32
         elif type2float == 'float64':
@@ -2095,196 +2231,53 @@ class Scale_SubNets(object):
         else:
             self.float_type = tf.float16
 
-        self.Ws = []
-        self.Bs = []
-        for i_net in range(num2subnets):
-            with tf.compat.v1.variable_scope('WB_scope', reuse=tf.compat.v1.AUTO_REUSE):
-                stddev_WB = (2.0 / (indim + hidden_units[0])) ** varcoe
-                Win = tf.compat.v1.get_variable(name=str(scope2W) + str(i_net) + '_in',
-                                                shape=(indim, hidden_units[0]),
-                                                initializer=tf.random_normal_initializer(stddev=stddev_WB),
-                                                trainable=True,
-                                                dtype=self.float_type)
-                Bin = tf.compat.v1.get_variable(name=str(scope2B) + str(i_net) + '_in',
-                                                shape=(hidden_units[0],),
-                                                initializer=tf.random_normal_initializer(stddev=stddev_WB),
-                                                dtype=self.float_type,
-                                                trainable=True)
-                self.Ws.append(Win)
-                self.Bs.append(Bin)
-                for i_layer in range(len(hidden_units) - 1):
-                    stddev_WB = (2.0 / (hidden_units[i_layer] + hidden_units[i_layer + 1])) ** varcoe
-                    W = tf.compat.v1.get_variable(name=str(scope2W) + str(i_net) + str(i_layer),
-                                                  shape=(hidden_units[i_layer], hidden_units[i_layer + 1]),
-                                                  initializer=tf.random_normal_initializer(stddev=stddev_WB),
-                                                  trainable=True,
-                                                  dtype=self.float_type)
-                    B = tf.compat.v1.get_variable(name=str(scope2B) + str(i_net) + str(i_layer),
-                                                  shape=(hidden_units[i_layer + 1],),
-                                                  initializer=tf.random_normal_initializer(stddev=stddev_WB),
-                                                  trainable=True, dtype=self.float_type)
-                    self.Ws.append(W)
-                    self.Bs.append(B)
-
-                # 输出层：最后一层的权重和偏置。将最后的结果变换到输出维度
-                stddev_WB = (2.0 / (hidden_units[-1] + outdim)) ** varcoe
-                Wout = tf.compat.v1.get_variable(name=str(scope2W) + str(i_net) + '_out',
-                                                 shape=(hidden_units[-1], outdim),
-                                                 initializer=tf.random_normal_initializer(stddev=stddev_WB),
-                                                 trainable=True,
-                                                 dtype=self.float_type)
-                Bout = tf.compat.v1.get_variable(name=str(scope2B) + str(i_net) + '_out',
-                                                 shape=(outdim,),
-                                                 initializer=tf.random_normal_initializer(stddev=stddev_WB),
-                                                 trainable=True,
-                                                 dtype=self.float_type)
-
-                self.Ws.append(Wout)
-                self.Bs.append(Bout)
-
-    def get_regular_sum2WB(self, regular_model):
-        layers = len(self.hidden_units)+1
-        if regular_model == 'L1':
-            regular_w = 0
-            regular_b = 0
-            for i_layer in range(layers):
-                regular_w = regular_w + tf.reduce_sum(tf.abs(self.Ws[i_layer]), keepdims=False)
-                regular_b = regular_b + tf.reduce_sum(tf.abs(self.Bs[i_layer]), keepdims=False)
-        elif regular_model == 'L2':
-            regular_w = 0
-            regular_b = 0
-            for i_layer in range(layers):
-                regular_w = regular_w + tf.reduce_sum(tf.square(self.Ws[i_layer]), keepdims=False)
-                regular_b = regular_b + tf.reduce_sum(tf.square(self.Bs[i_layer]), keepdims=False)
-        else:
-            regular_w = tf.constant(0.0)
-            regular_b = tf.constant(0.0)
-        return regular_w + regular_b
-
-    def __call__(self, inputs, scale=None, sFourier=1.0):
-        """
-        Args
-            inputs: the input point set [num, in-dim]
-            scale: The scale-factor to transform the input-data
-        return
-            output: the output point set [num, out-dim]
-        """
-
-        assert (len(scale) != 0)
-        out_result = 0.0
-        len2hidden = len(self.hidden_units)
-        for i_net in range(self.num2subnets):
-            i_in_layer = i_net*(len2hidden + 1)
-            # ------ dealing with the input data ---------------
-            H = tf.add(tf.matmul(inputs * scale[i_net], self.Ws[i_in_layer]), self.Bs[i_in_layer])
-            H = self.actFunc_in(H)
-
-            #  ---resnet(one-step skip connection for two consecutive layers if have equal neurons）---
-            hidden_record = self.hidden_units[0]
-            for i_layer in range(len2hidden - 1):
-                i_hidden_layer = i_net * (len2hidden + 1) + i_layer + 1
-                # W_hidden = self.Ws[i_hidden_layer]
-                H_pre = H
-                H = tf.add(tf.matmul(H, self.Ws[i_hidden_layer]), self.Bs[i_hidden_layer])
-                H = self.actFunc(H)
-                if self.hidden_units[i_layer + 1] == hidden_record:
-                    H = H + H_pre
-                hidden_record = self.hidden_units[i_layer + 1]
-
-            i_out_layer = i_net * (len2hidden + 1) + len2hidden
-            H = tf.add(tf.matmul(H, self.Ws[i_out_layer]), self.Bs[i_out_layer])
-            out_result = out_result + self.actFunc_out(H)*(1.0/self.num2subnets)
-        return out_result
-
-
-class Scale_SubNets3D(object):
-    """
-    Args:
-        indim: the dimension for input data
-        outdim: the dimension for output
-        hidden_units: the number of  units for hidden layer, a list or a tuple
-        name2Model: the name of using DNN type, DNN , ScaleDNN or FourierDNN
-        actName2in: the name of activation function for input layer
-        actName: the name of activation function for hidden layer
-        actName2out: the name of activation function for output layer
-        scope2W: the namespace of weight
-        scope2B: the namespace of bias
-        repeat_high_freq: repeating the high-frequency component of scale-transformation factor or not
-        num2subnets: the number of sub-nets
-        if name2Model is not wavelet NN, actName2in is not same as actName; otherwise, actName2in is same as actName
-    """
-    def __init__(self, indim=1, outdim=1, hidden_units=None, name2Model='DNN', actName2in='tanh', actName='tanh',
-                 actName2out='linear', scope2W='Weight', scope2B='Bias', repeat_high_freq=True, type2float='float32',
-                 varcoe=0.5, num2subnets=5):
-        super(Scale_SubNets3D, self).__init__()
-        self.indim = indim
-        self.outdim = outdim
-        self.hidden_units = hidden_units
-        self.name2Model = name2Model
-        self.actName2in = actName2in
-        self.actName = actName
-        self.actName2out = actName2out
-        self.actFunc_in = my_actFunc(actName=actName2in)
-        self.actFunc = my_actFunc(actName=actName)
-        self.actFunc_out = my_actFunc(actName=actName2out)
-        self.repeat_high_freq = repeat_high_freq
-        self.type2float = type2float
-        self.num2subnets = num2subnets
-
-        if type2float == 'float32':
-            self.float_type = tf.float32
-        elif type2float == 'float64':
-            self.float_type = tf.float64
-        else:
-            self.float_type = tf.float16
-
-        self.Ws = []
-        self.Bs = []
         with tf.compat.v1.variable_scope('WB_scope', reuse=tf.compat.v1.AUTO_REUSE):
             stddev_WB = (2.0 / (indim + hidden_units[0])) ** varcoe
-            Win = tf.compat.v1.get_variable(name=str(scope2W) + '_in',
-                                            shape=(num2subnets, indim, hidden_units[0]),
-                                            initializer=tf.random_normal_initializer(stddev=stddev_WB),
-                                            trainable=True, dtype=self.float_type)
-            Bin = tf.compat.v1.get_variable(name=str(scope2B) + '_in',
-                                            shape=(num2subnets, 1, hidden_units[0]),
-                                            initializer=tf.random_normal_initializer(stddev=stddev_WB),
-                                            trainable=True, dtype=self.float_type)
+            Win = tf.compat.v1.get_variable(
+                name=str(scope2W) + '_in', shape=(indim, hidden_units[0]),
+                initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True, dtype=self.float_type)
+            # Bin = tf.compat.v1.get_variable(
+            #     name=str(scope2B) + '_in', shape=(hidden_units[0],),
+            #     initializer=tf.random_normal_initializer(stddev=stddev_WB), dtype=self.float_type, trainable=False)
+            Bin = tf.compat.v1.get_variable(
+                name=str(scope2B) + '_in', shape=(hidden_units[0],),
+                initializer=tf.zeros_initializer(), dtype=self.float_type, trainable=False)
             self.Ws.append(Win)
             self.Bs.append(Bin)
-            for i_layer in range(len(hidden_units) - 1):
+            for i_layer in range(len(hidden_units)-1):
                 stddev_WB = (2.0 / (hidden_units[i_layer] + hidden_units[i_layer + 1])) ** varcoe
-                W = tf.compat.v1.get_variable(name=str(scope2W) + str(i_layer),
-                                              shape=(num2subnets, hidden_units[i_layer], hidden_units[i_layer + 1]),
-                                              initializer=tf.random_normal_initializer(stddev=stddev_WB),
-                                              trainable=True, dtype=self.float_type)
-                B = tf.compat.v1.get_variable(name=str(scope2B) + str(i_layer),
-                                              shape=(num2subnets, 1, hidden_units[i_layer + 1]),
-                                              # shape=(num2subnets, hidden_units[i_layer + 1], 1),
-                                              initializer=tf.random_normal_initializer(stddev=stddev_WB),
-                                              trainable=True, dtype=self.float_type)
+                if i_layer == 0:
+                    W = tf.compat.v1.get_variable(
+                        name=str(scope2W) + str(i_layer), shape=(hidden_units[i_layer] * 2, hidden_units[i_layer + 1]),
+                        initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True,
+                        dtype=self.float_type)
+                    B = tf.compat.v1.get_variable(
+                        name=str(scope2B) + str(i_layer), shape=(hidden_units[i_layer + 1],),
+                        initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True,
+                        dtype=self.float_type)
+                else:
+                    W = tf.compat.v1.get_variable(
+                        name=str(scope2W) + str(i_layer), shape=(hidden_units[i_layer], hidden_units[i_layer + 1]),
+                        initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True,
+                        dtype=self.float_type)
+                    B = tf.compat.v1.get_variable(
+                        name=str(scope2B) + str(i_layer), shape=(hidden_units[i_layer + 1],),
+                        initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True,
+                        dtype=self.float_type)
                 self.Ws.append(W)
                 self.Bs.append(B)
 
             # 输出层：最后一层的权重和偏置。将最后的结果变换到输出维度
             stddev_WB = (2.0 / (hidden_units[-1] + outdim)) ** varcoe
-            Wout = tf.compat.v1.get_variable(name=str(scope2W) + '_out',
-                                             shape=(num2subnets, hidden_units[-1], outdim),
-                                             initializer=tf.random_normal_initializer(stddev=stddev_WB),
-                                             trainable=True, dtype=self.float_type)
-            Bout = tf.compat.v1.get_variable(name=str(scope2B) + '_out',
-                                             shape=(num2subnets, 1, outdim),
-                                             initializer=tf.random_normal_initializer(stddev=stddev_WB),
-                                             trainable=True, dtype=self.float_type)
+            Wout = tf.compat.v1.get_variable(
+                name=str(scope2W) + '_out', shape=(hidden_units[-1], outdim),
+                initializer=tf.random_normal_initializer(stddev=stddev_WB), trainable=True, dtype=self.float_type)
+            Bout = tf.compat.v1.get_variable(
+                name=str(scope2B) + '_out', shape=(outdim,), initializer=tf.random_normal_initializer(stddev=stddev_WB),
+                trainable=True, dtype=self.float_type)
 
             self.Ws.append(Wout)
             self.Bs.append(Bout)
-
-            # stddev_WB = (2.0 / (num2subnets + 1)) ** varcoe
-            # self.weight2subnets = tf.compat.v1.get_variable(name=str(scope2W) + '_subnet',
-            #                                                 shape=(num2subnets, 1, 1),
-            #                                                 initializer=tf.random_normal_initializer(stddev=stddev_WB),
-            #                                                 trainable=True, dtype=self.float_type)
 
     def get_regular_sum2WB(self, regular_model):
         layers = len(self.hidden_units)+1
@@ -2313,20 +2306,31 @@ class Scale_SubNets3D(object):
         return
             output: the output point set [num, out-dim]
         """
+        # ------ dealing with the input data ---------------
+        H = tf.add(tf.matmul(inputs, self.Ws[0]), self.Bs[0])
         assert (len(scale) != 0)
-        expand_scale = np.expand_dims(scale, axis=-1)
-        exapnd2_scale = np.expand_dims(expand_scale, axis=-1)
-        exapnd2_scale = exapnd2_scale.astype(dtype=np.float32)
-        len2hidden = len(self.hidden_units)
+        repeat_num = int(self.hidden_units[0] / len(scale))
+        repeat_scale = np.repeat(scale, repeat_num)
 
-        H_in = tf.matmul(inputs, self.Ws[0])
-        H_scale = tf.multiply(exapnd2_scale, H_in)
-        H = tf.add(H_scale, self.Bs[0])
-        H = self.actFunc_in(H)
+        if self.repeat_high_freq:
+            repeat_scale = np.concatenate(
+                (repeat_scale, np.ones([self.hidden_units[0] - repeat_num * len(scale)]) * scale[-1]))
+        else:
+            repeat_scale = np.concatenate(
+                (np.ones([self.hidden_units[0] - repeat_num * len(scale)]) * scale[0], repeat_scale))
+
+        if self.type2float == 'float32':
+            repeat_scale = repeat_scale.astype(np.float32)
+        elif self.type2float == 'float64':
+            repeat_scale = repeat_scale.astype(np.float64)
+        else:
+            repeat_scale = repeat_scale.astype(np.float16)
+
+        H = sFourier*tf.concat([tf.cos(H * repeat_scale), tf.sin(H * repeat_scale)], axis=-1)
 
         #  ---resnet(one-step skip connection for two consecutive layers if have equal neurons）---
         hidden_record = self.hidden_units[0]
-        for i_layer in range(len2hidden - 1):
+        for i_layer in range(len(self.hidden_units) - 1):
             H_pre = H
             H = tf.add(tf.matmul(H, self.Ws[i_layer + 1]), self.Bs[i_layer + 1])
             H = self.actFunc(H)
@@ -2336,9 +2340,6 @@ class Scale_SubNets3D(object):
 
         H = tf.add(tf.matmul(H, self.Ws[-1]), self.Bs[-1])
         out_result = self.actFunc_out(H)
-        # out_result = tf.multiply(out_result, self.weight2subnets)
-        out_result = tf.multiply(out_result, 1.0/exapnd2_scale)
-        out_result = tf.reduce_mean(out_result, axis=0)
         return out_result
 
 
@@ -2355,7 +2356,8 @@ class Fourier_SubNets(object):
         scope2W: the namespace of weight
         scope2B: the namespace of bias
         repeat_high_freq: repeating the high-frequency component of scale-transformation factor or not
-        if name2Model is not wavelet NN, actName2in is not same as actName; otherwise, actName2in is same as actName
+        type2float: the numerical type
+        num2subnets: the number of sub-nets
     """
     def __init__(self, indim=1, outdim=1, hidden_units=None, name2Model='DNN', actName2in='tanh', actName='tanh',
                  actName2out='linear', scope2W='Weight', scope2B='Bias', repeat_high_freq=True, type2float='float32',
@@ -2509,7 +2511,8 @@ class Fourier_SubNets3D(object):
         scope2W: the namespace of weight
         scope2B: the namespace of bias
         repeat_high_freq: repeating the high-frequency component of scale-transformation factor or not
-        if name2Model is not wavelet NN, actName2in is not same as actName; otherwise, actName2in is same as actName
+        type2float: the numerical type
+        num2subnets: the number of sub-nets
     """
     def __init__(self, indim=1, outdim=1, hidden_units=None, name2Model='DNN', actName2in='tanh', actName='tanh',
                  actName2out='linear', scope2W='Weight', scope2B='Bias', repeat_high_freq=True, type2float='float32',
